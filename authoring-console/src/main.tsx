@@ -15,6 +15,7 @@ import { createFixtureKubernetesTransport } from "./fixtures/transports/kubernet
 import { createFixtureCapabilityTransport } from "./fixtures/transports/capabilities.ts";
 import { launcherSession } from "./fixtures/sessions.ts";
 import { devBaselineCompatibilityManifest } from "./fixtures/compatibility-baseline.ts";
+import { authoringRoutes } from "./authoring/index.tsx";
 
 const services: AppServices = {
   session: launcherSession,
@@ -34,7 +35,7 @@ const bootstrap = async (): Promise<void> => {
   createRoot(container).render(
     <StrictMode>
       <HashRouter>
-        <App services={services} />
+        <App services={services} featureRoutes={authoringRoutes} />
       </HashRouter>
     </StrictMode>,
   );

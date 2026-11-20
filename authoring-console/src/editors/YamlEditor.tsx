@@ -26,7 +26,7 @@ export const YamlEditor = ({
   const { resolved } = useTheme();
 
   useEffect(() => {
-    setupMonaco();
+    void setupMonaco();
   }, []);
 
   return (

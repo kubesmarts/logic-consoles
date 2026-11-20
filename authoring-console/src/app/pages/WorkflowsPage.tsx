@@ -46,6 +46,13 @@ export const WorkflowsPage = (): ReactNode => {
       <PageSection>
         <Title headingLevel="h1">Workflows</Title>
         <Content component="p">Deployed workflow families, grouped by namespace and document name.</Content>
+        <Button
+          variant="primary"
+          onClick={() => navigate("/authoring")}
+          style={{ marginTop: "1rem" }}
+        >
+          Create workflow
+        </Button>
       </PageSection>
       <PageSection>
         {isPending ? (
