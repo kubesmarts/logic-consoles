@@ -177,6 +177,15 @@ export const AuthoringWorkspace = (): ReactNode => {
               </Button>
             </ToolbarItem>
             <ToolbarItem>
+              <Button
+                variant="secondary"
+                onClick={() => navigate("/publish")}
+                isDisabled={!parsedIdentity || hasUnsavedChanges}
+              >
+                Publish workflow
+              </Button>
+            </ToolbarItem>
+            <ToolbarItem>
               <Button variant="secondary" onClick={() => setShowExampleCatalog(true)}>
                 Start from example
               </Button>

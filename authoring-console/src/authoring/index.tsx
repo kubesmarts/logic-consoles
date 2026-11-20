@@ -1,5 +1,5 @@
 /**
- * Authoring workspace — E1 public API.
+ * Authoring workspace — E1 + E2 public API.
  *
  * Exports:
  * - `authoringRoutes`: FeatureRoute[] for the shell to integrate (via AppRoutes).
@@ -24,6 +24,13 @@ const AuthoringWorkspace = lazy(() =>
 );
 
 /**
+ * Lazy-load the publish wizard (E2).
+ */
+const PublishWizard = lazy(() =>
+  import("./publish/PublishWizard.tsx").then((m) => ({ default: m.PublishWizard })),
+);
+
+/**
  * Wrapper that provides authoring context for routes.
  */
 const AuthoringWorkspaceWithProvider = (): ReactNode => (
@@ -33,13 +40,24 @@ const AuthoringWorkspaceWithProvider = (): ReactNode => (
 );
 
 /**
- * E1 feature routes. The shell integrates these via `AppRoutes({ featureRoutes })`.
+ * Wrapper that provides authoring context for the publish wizard.
+ */
+const PublishWizardWithProvider = (): ReactNode => (
+  <AuthoringProvider>
+    <PublishWizard />
+  </AuthoringProvider>
+);
+
+/**
+ * E1 + E2 feature routes. The shell integrates these via `AppRoutes({ featureRoutes })`.
  * - /authoring → blank workspace
  * - /authoring/:draftId → resume a saved draft
+ * - /publish → publish wizard (E2)
  */
 export const authoringRoutes: readonly FeatureRoute[] = [
   { path: "/authoring", element: <AuthoringWorkspaceWithProvider /> },
   { path: "/authoring/:draftId", element: <AuthoringWorkspaceWithProvider /> },
+  { path: "/publish", element: <PublishWizardWithProvider /> },
 ];
 
 // Re-export the provider and hook for E2 integration
