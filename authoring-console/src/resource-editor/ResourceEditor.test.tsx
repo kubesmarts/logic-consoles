@@ -370,4 +370,135 @@ metadata:
       expect(screen.getByText(/Forbidden/)).toBeInTheDocument();
     });
   });
+
+  // Review fix #3: Line diagnostics displayed for invalid YAML
+  it("displays line diagnostics for invalid YAML", async () => {
+    const user = userEvent.setup();
+
+    const seed: KubeObject = {
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: "test" },
+    };
+
+    const ref: ResourceRef = {
+      gvk: { group: "", version: "v1", kind: "Namespace" },
+      name: "test",
+    };
+
+    const transport = createFixtureKubernetesTransport();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let capturedController: any = null;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const renderForm = (controller: any) => {
+      capturedController = controller;
+      return <div>Form view</div>;
+    };
+
+    render(
+      <ResourceEditor
+        transport={transport}
+        ref={ref}
+        seed={seed}
+        verb="create"
+        renderForm={renderForm}
+      />,
+    );
+
+    // Toggle to YAML
+    await user.click(screen.getByText("YAML"));
+
+    // Update to invalid YAML with a parse error
+    const invalidYaml = `apiVersion: v1
+kind: Namespace
+metadata:
+  name: test
+  invalid: [unclosed array
+`;
+
+    capturedController?.updateYaml(invalidYaml);
+
+    // Wait for the warning
+    await waitFor(() => {
+      expect(screen.getByText(/Invalid YAML/)).toBeInTheDocument();
+    });
+
+    // Should show line diagnostics (the yaml library will include error details)
+    // The exact format depends on the yaml library, but we check that diagnostics are present
+    expect(capturedController?.state.draft.diagnostics.length).toBeGreaterThan(0);
+  });
+
+  // Review fix #2: Form shows lastValidObject when YAML is invalid
+  it("form shows lastValidObject when YAML is invalid", async () => {
+    const user = userEvent.setup();
+
+    const seed: KubeObject = {
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: "valid-name" },
+    };
+
+    const ref: ResourceRef = {
+      gvk: { group: "", version: "v1", kind: "Namespace" },
+      name: "valid-name",
+    };
+
+    const transport = createFixtureKubernetesTransport();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let capturedController: any = null;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const renderForm = (controller: any) => {
+      capturedController = controller;
+      // Form should use lastValidObject when draft.object is null
+      const name =
+        controller.state.draft.object?.metadata.name ??
+        controller.state.draft.lastValidObject?.metadata.name ??
+        "";
+      return (
+        <div>
+          <div data-testid="form-name">{name}</div>
+        </div>
+      );
+    };
+
+    render(
+      <ResourceEditor
+        transport={transport}
+        ref={ref}
+        seed={seed}
+        verb="create"
+        renderForm={renderForm}
+      />,
+    );
+
+    // Initially shows valid name in form
+    expect(screen.getByTestId("form-name")).toHaveTextContent("valid-name");
+
+    // Toggle to YAML
+    await user.click(screen.getByText("YAML"));
+
+    // Update to invalid YAML
+    const invalidYaml = `apiVersion: v1
+kind: Namespace
+metadata:
+  name: test
+  invalid: [unclosed
+`;
+
+    capturedController?.updateYaml(invalidYaml);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Invalid YAML/)).toBeInTheDocument();
+    });
+
+    // Toggle back to form
+    await user.click(screen.getByText("Form"));
+
+    // Form should still show the last valid name (stale preview)
+    expect(screen.getByTestId("form-name")).toHaveTextContent("valid-name");
+  });
 });

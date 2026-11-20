@@ -12,4 +12,6 @@ export type {
   FieldUpdate,
   ReconciliationState,
   ParsedDraft,
+  DiffResult,
+  FieldDiff,
 } from "./types.ts";

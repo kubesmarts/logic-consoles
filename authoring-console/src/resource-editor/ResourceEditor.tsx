@@ -147,7 +147,23 @@ export const ResourceEditor = <TSpec = unknown, TStatus = unknown>({
 
         {state.draft.invalid && (
           <Alert variant={AlertVariant.warning} title="Invalid YAML" isInline>
-            The YAML has syntax errors. The last valid preview is shown (stale).
+            <div>The YAML has syntax errors. The last valid preview is shown (stale).</div>
+            {/* Review fix #3: Display line diagnostics */}
+            {state.draft.diagnostics.length > 0 && (
+              <div style={{ marginTop: "0.5rem" }}>
+                {state.draft.diagnostics.map((err, idx) => {
+                  const line = err.linePos?.[0]?.line ?? err.pos?.[0];
+                  const col = err.linePos?.[0]?.col ?? err.pos?.[1];
+                  return (
+                    <div key={idx} style={{ fontFamily: "monospace", fontSize: "0.9em" }}>
+                      {line !== undefined && col !== undefined
+                        ? `Line ${line}, col ${col}: ${err.message}`
+                        : err.message}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </Alert>
         )}
 

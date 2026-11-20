@@ -262,4 +262,130 @@ metadata:
     expect(result.current.state.resourceVersion).toBeUndefined();
     expect(result.current.state.verb).toBe("create");
   });
+
+  // Review fix #1: Diff computation on update path
+  it("computes deployed-to-draft diff on update path", () => {
+    const deployedObject: KubeObject<{ replicas: number; image: string }> = {
+      apiVersion: "apps/v1",
+      kind: "Deployment",
+      metadata: { name: "test", namespace: "default", resourceVersion: "1000" },
+      spec: { replicas: 2, image: "original:1.0" },
+    };
+
+    const updateSeed: KubeObject<{ replicas: number; image: string }> = {
+      apiVersion: "apps/v1",
+      kind: "Deployment",
+      metadata: { name: "test", namespace: "default", resourceVersion: "1000" },
+      spec: { replicas: 2, image: "original:1.0" },
+    };
+
+    const transport = createFixtureKubernetesTransport();
+    const { result } = renderHook(() =>
+      useResourceEditor({
+        transport,
+        ref: { ...ref, gvk: { ...ref.gvk, kind: "Deployment" } },
+        seed: updateSeed,
+        verb: "update",
+        deployed: deployedObject,
+      }),
+    );
+
+    // Initially, no diff (deployed == draft)
+    expect(result.current.state.diff).not.toBeNull();
+    expect(result.current.state.diff?.changed).toHaveLength(0);
+
+    // Update a field
+    act(() => {
+      result.current.updateFields([{ path: "spec.replicas", value: 3 }]);
+    });
+
+    // Diff should now show the change
+    expect(result.current.state.diff).not.toBeNull();
+    expect(result.current.state.diff?.changed.length).toBeGreaterThan(0);
+    const replicaDiff = result.current.state.diff?.changed.find((d) => d.path === "spec.replicas");
+    expect(replicaDiff?.deployed).toBe(2);
+    expect(replicaDiff?.draft).toBe(3);
+  });
+
+  // Review fix #2: lastValidObject preserved when YAML becomes invalid
+  it("preserves lastValidObject when YAML becomes invalid", () => {
+    const transport = createFixtureKubernetesTransport();
+    const { result } = renderHook(() =>
+      useResourceEditor({ transport, ref, seed, verb: "create" }),
+    );
+
+    // Initially valid
+    expect(result.current.state.draft.invalid).toBe(false);
+    expect(result.current.state.draft.object?.metadata.name).toBe("test-namespace");
+    expect(result.current.state.draft.lastValidObject?.metadata.name).toBe("test-namespace");
+
+    // Update to invalid YAML
+    const invalidYaml = `apiVersion: v1
+kind: Namespace
+metadata:
+  name: test
+  invalid: [unclosed
+`;
+
+    act(() => {
+      result.current.updateYaml(invalidYaml);
+    });
+
+    // Now invalid, but lastValidObject preserved
+    expect(result.current.state.draft.invalid).toBe(true);
+    expect(result.current.state.draft.object).toBeNull();
+    expect(result.current.state.draft.lastValidObject?.metadata.name).toBe("test-namespace");
+  });
+
+  // Review fix #3: Line diagnostics for invalid YAML
+  it("includes line diagnostics for invalid YAML", () => {
+    const transport = createFixtureKubernetesTransport();
+    const { result } = renderHook(() =>
+      useResourceEditor({ transport, ref, seed, verb: "create" }),
+    );
+
+    // Update to invalid YAML
+    const invalidYaml = `apiVersion: v1
+kind: Namespace
+metadata:
+  name: test
+  invalid: [unclosed
+`;
+
+    act(() => {
+      result.current.updateYaml(invalidYaml);
+    });
+
+    // Should have diagnostics
+    expect(result.current.state.draft.diagnostics.length).toBeGreaterThan(0);
+  });
+
+  // Review fix #4: Rapid double-dry-run uses current draft (concurrency bug fix)
+  it("handles rapid double-dry-run with current draft state", async () => {
+    const transport = createFixtureKubernetesTransport();
+    const { result } = renderHook(() =>
+      useResourceEditor({ transport, ref, seed, verb: "create" }),
+    );
+
+    // Update the draft
+    act(() => {
+      result.current.updateFields([{ path: "metadata.name", value: "updated-name" }]);
+    });
+
+    // Trigger two dry-runs in rapid succession
+    const dryRun1 = act(async () => {
+      await result.current.dryRun();
+    });
+
+    const dryRun2 = act(async () => {
+      await result.current.dryRun();
+    });
+
+    await Promise.all([dryRun1, dryRun2]);
+
+    // Both should succeed without error (no stale state used)
+    expect(result.current.state.errors).toHaveLength(0);
+    expect(result.current.state.admitted).not.toBeNull();
+    expect(result.current.state.admitted?.metadata.name).toBe("updated-name");
+  });
 });

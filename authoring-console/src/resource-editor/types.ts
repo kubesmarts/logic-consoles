@@ -5,7 +5,7 @@
  * Hold it as a parsed YAML Document so form edits and text edits mutate the same source.
  * resourceVersion is held SEPARATELY and never editable.
  */
-import type { Document } from "yaml";
+import type { Document, YAMLParseError } from "yaml";
 import type {
   KubeObject,
   ResourceRef,
@@ -23,6 +23,32 @@ export interface ParsedDraft<TSpec = unknown> {
   readonly object: KubeObject<TSpec> | null;
   /** true when the YAML text is syntactically invalid. */
   readonly invalid: boolean;
+  /**
+   * Last valid object before YAML became invalid. Used for stale preview in form
+   * view when the YAML is syntactically invalid (review fix #2).
+   */
+  readonly lastValidObject: KubeObject<TSpec> | null;
+  /** Parse errors with line/column positions (review fix #3). */
+  readonly diagnostics: readonly YAMLParseError[];
+}
+
+/**
+ * Field-level difference between deployed and draft (review fix #1).
+ * Kind-agnostic structural comparison for the update path.
+ */
+export interface FieldDiff {
+  readonly path: string;
+  readonly deployed: unknown;
+  readonly draft: unknown;
+}
+
+export interface DiffResult {
+  /** Fields that differ between deployed and draft. */
+  readonly changed: readonly FieldDiff[];
+  /** Fields in deployed but not in draft (removed). */
+  readonly removed: readonly FieldDiff[];
+  /** Fields in draft but not in deployed (added). */
+  readonly added: readonly FieldDiff[];
 }
 
 /**
@@ -48,6 +74,11 @@ export interface EditorState<TSpec = unknown> {
   readonly submitting: boolean;
   /** The deployed object for diff/comparison (populated on update path). */
   readonly deployed: KubeObject<TSpec> | null;
+  /**
+   * Deployed-to-draft diff for the update path (review fix #1). Null on create or
+   * when no deployed object is available.
+   */
+  readonly diff: DiffResult | null;
 }
 
 /**
