@@ -8,8 +8,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter } from "react-router-dom";
 import "@patternfly/react-core/dist/styles/base.css";
-import { App } from "./app/App.tsx";
-import type { ConsoleServices } from "./app/ConsoleContext.tsx";
+import { App, type AppServices } from "./app/App.tsx";
 import { createConsoleStorage } from "./app/storage.ts";
 import { createFetchGatewayTransport } from "./fixtures/gateway-transport.ts";
 import { createFixtureKubernetesTransport } from "./fixtures/transports/kubernetes.ts";
@@ -17,7 +16,7 @@ import { createFixtureCapabilityTransport } from "./fixtures/transports/capabili
 import { launcherSession } from "./fixtures/sessions.ts";
 import { devBaselineCompatibilityManifest } from "./fixtures/compatibility-baseline.ts";
 
-const services: ConsoleServices = {
+const services: AppServices = {
   session: launcherSession,
   gateway: createFetchGatewayTransport(),
   kubernetes: createFixtureKubernetesTransport(),

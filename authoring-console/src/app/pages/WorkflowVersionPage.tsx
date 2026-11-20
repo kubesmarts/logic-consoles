@@ -8,7 +8,6 @@
  * establishes the target for Diagram, Run and Instance history.
  */
 import { useMemo, useState, type ReactNode } from "react";
-import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Breadcrumb,
@@ -33,13 +32,13 @@ import { Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
 import { stringify as stringifyYaml } from "yaml";
 import { DiagramPreview } from "../../editors/DiagramPreview.tsx";
 import { YamlEditor } from "../../editors/YamlEditor.tsx";
-import { useConsole } from "../ConsoleContext.tsx";
+import { useConsole, useNavigation } from "../ConsoleContext.tsx";
 import { useWorkflowCr, useWorkflowFamilies, useWorkflowFlow } from "../queries.ts";
 import type { WorkflowVersionKey } from "../../contracts/index.ts";
 import { workflowVersionKeyToString } from "../../contracts/index.ts";
 
 export const WorkflowVersionPage = (): ReactNode => {
-  const params = useParams();
+  const { params } = useNavigation();
   const namespace = decodeURIComponent(params["namespace"] ?? "");
   const workflowName = decodeURIComponent(params["workflowName"] ?? "");
   const version = decodeURIComponent(params["version"] ?? "");

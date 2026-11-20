@@ -4,7 +4,7 @@
  * capability model. These exercise the load-bearing boundary, not UI chrome.
  */
 import { describe, expect, it } from "vitest";
-import { buildFamilies } from "../src/app/queries.ts";
+import { buildFamilies, compareSemver } from "../src/app/queries.ts";
 import { catalogFixture } from "../src/fixtures/catalog.ts";
 import { definitionFixtures } from "../src/fixtures/kubernetes.ts";
 import { createConsoleStorage } from "../src/app/storage.ts";
@@ -35,6 +35,27 @@ describe("workflow identity vs CR name", () => {
     const hello = families.find((f) => f.key.workflowName === "hello-world");
     const v1 = hello?.versions.find((v) => v.version.version === "1.0.0");
     expect(v1?.crName).toBe("hello-world-v-1-0-0");
+  });
+});
+
+describe("semver-aware version ordering", () => {
+  it("orders by numeric segments, not lexically (1.9.0 before 1.10.0)", () => {
+    expect(compareSemver("1.9.0", "1.10.0")).toBeLessThan(0);
+    expect(["1.10.0", "1.9.0", "1.2.0"].sort(compareSemver)).toEqual(["1.2.0", "1.9.0", "1.10.0"]);
+  });
+
+  it("ranks a prerelease below its release and orders prerelease identifiers", () => {
+    expect(compareSemver("1.0.0-rc.1", "1.0.0")).toBeLessThan(0);
+    expect(compareSemver("1.0.0-rc.1", "1.0.0-rc.2")).toBeLessThan(0);
+    expect(["1.0.0", "1.0.0-rc.2", "1.0.0-rc.1"].sort(compareSemver)).toEqual([
+      "1.0.0-rc.1",
+      "1.0.0-rc.2",
+      "1.0.0",
+    ]);
+  });
+
+  it("does not throw on a non-numeric segment", () => {
+    expect(() => compareSemver("1.x.0", "1.2.0")).not.toThrow();
   });
 });
 

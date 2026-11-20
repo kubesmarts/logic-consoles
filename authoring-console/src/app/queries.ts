@@ -31,6 +31,64 @@ export const DEFINITION_GVK: GroupVersionKind = {
   kind: LogicKinds.LogicFlowDefinition,
 };
 
+/**
+ * SemVer-aware version comparator. Reused by downstream latest/second-version logic
+ * (packet E), so it must order `1.9.0` before `1.10.0` (numeric segments), not
+ * lexically. Prerelease handling follows SemVer precedence: a release outranks its
+ * prerelease (`1.0.0` > `1.0.0-rc.1`); prerelease identifiers compare numerically when
+ * both numeric, otherwise ASCII, with numeric < alphanumeric and a shorter identifier
+ * set ranking lower. Non-numeric main segments fall back to a string compare so an
+ * unexpected value never throws.
+ */
+const isNumeric = (segment: string): boolean => /^\d+$/.test(segment);
+
+const comparePrerelease = (a: string, b: string): number => {
+  const as = a.split(".");
+  const bs = b.split(".");
+  for (let i = 0; i < Math.max(as.length, bs.length); i += 1) {
+    const ai = as[i];
+    const bi = bs[i];
+    if (ai === undefined) return -1; // a has fewer identifiers -> lower precedence
+    if (bi === undefined) return 1;
+    const aNum = isNumeric(ai);
+    const bNum = isNumeric(bi);
+    if (aNum && bNum) {
+      const d = Number(ai) - Number(bi);
+      if (d !== 0) return d < 0 ? -1 : 1;
+    } else if (aNum !== bNum) {
+      return aNum ? -1 : 1; // numeric identifiers have lower precedence than alphanumeric
+    } else {
+      const d = ai.localeCompare(bi);
+      if (d !== 0) return d;
+    }
+  }
+  return 0;
+};
+
+export const compareSemver = (a: string, b: string): number => {
+  const [aMain, ...aPre] = a.split("-");
+  const [bMain, ...bPre] = b.split("-");
+  const aSeg = (aMain ?? "").split(".");
+  const bSeg = (bMain ?? "").split(".");
+  for (let i = 0; i < 3; i += 1) {
+    const aPart = aSeg[i] ?? "0";
+    const bPart = bSeg[i] ?? "0";
+    if (isNumeric(aPart) && isNumeric(bPart)) {
+      const d = Number(aPart) - Number(bPart);
+      if (d !== 0) return d < 0 ? -1 : 1;
+    } else {
+      const d = aPart.localeCompare(bPart);
+      if (d !== 0) return d;
+    }
+  }
+  const aPreStr = aPre.join("-");
+  const bPreStr = bPre.join("-");
+  if (!aPreStr && !bPreStr) return 0;
+  if (!aPreStr) return 1; // release outranks prerelease
+  if (!bPreStr) return -1;
+  return comparePrerelease(aPreStr, bPreStr);
+};
+
 type DefinitionObject = KubeObject<LogicFlowDefinitionSpec, LogicFlowDefinitionStatus>;
 
 export interface WorkflowVersionRow {
@@ -98,7 +156,7 @@ export const buildFamilies = (
 
   return [...families.values()].map((family) => ({
     ...family,
-    versions: [...family.versions].sort((a, b) => a.version.version.localeCompare(b.version.version)),
+    versions: [...family.versions].sort((a, b) => compareSemver(a.version.version, b.version.version)),
   }));
 };
 

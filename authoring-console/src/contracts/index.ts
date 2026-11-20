@@ -11,6 +11,7 @@
  */
 export * from "./result.ts";
 export * from "./session.ts";
+export * from "./navigation.ts";
 export * from "./operator.ts";
 export * from "./kubernetes.ts";
 export * from "./capabilities.ts";

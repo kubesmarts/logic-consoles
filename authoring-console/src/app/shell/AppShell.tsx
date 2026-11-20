@@ -7,7 +7,6 @@
  * + skip link. Light/dark toggle. The routed content is supplied as children.
  */
 import type { ReactNode } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
 import {
   Button,
   Masthead,
@@ -32,7 +31,7 @@ import {
 import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
 import MoonIcon from "@patternfly/react-icons/dist/esm/icons/moon-icon";
 import SunIcon from "@patternfly/react-icons/dist/esm/icons/sun-icon";
-import { useConsole } from "../ConsoleContext.tsx";
+import { useConsole, useNavigation } from "../ConsoleContext.tsx";
 import { useTheme } from "../theme.tsx";
 
 const MAIN_ID = "main-content";
@@ -54,8 +53,7 @@ export const PRIMARY_NAV: readonly NavEntry[] = [
 export const AppShell = ({ children }: { readonly children: ReactNode }): ReactNode => {
   const { session } = useConsole();
   const { resolved, toggle } = useTheme();
-  const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { navigate, currentPath } = useNavigation();
 
   const contextLabel = session.context.contextName || "Disconnected";
 
@@ -106,7 +104,7 @@ export const AppShell = ({ children }: { readonly children: ReactNode }): ReactN
               <NavItem
                 key={entry.to}
                 to={`#${entry.to}`}
-                isActive={pathname === entry.to || pathname.startsWith(`${entry.to}/`)}
+                isActive={currentPath === entry.to || currentPath.startsWith(`${entry.to}/`)}
                 onClick={(event) => {
                   event.preventDefault();
                   navigate(entry.to);

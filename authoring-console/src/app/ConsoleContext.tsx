@@ -13,7 +13,9 @@ import type {
   ConsoleStorage,
   GatewayTransport,
   KubernetesTransport,
+  NavigationPort,
   SessionIdentity,
+  UseNavigation,
 } from "../contracts/index.ts";
 
 export interface ConsoleServices {
@@ -23,6 +25,8 @@ export interface ConsoleServices {
   readonly capabilities: CapabilityTransport;
   readonly storage: ConsoleStorage;
   readonly compatibility: CompatibilityManifest;
+  /** Injected navigation port (hook form). See src/contracts/navigation.ts. */
+  readonly useNavigation: UseNavigation;
 }
 
 const ConsoleContext = createContext<ConsoleServices | null>(null);
@@ -42,3 +46,6 @@ export const useConsole = (): ConsoleServices => {
   }
   return value;
 };
+
+/** Consume the injected navigation port. Views use this instead of a router directly. */
+export const useNavigation = (): NavigationPort => useConsole().useNavigation();

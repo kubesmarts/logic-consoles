@@ -6,7 +6,6 @@
  * selecting a version establishes the target and opens its detail page.
  */
 import { useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   Bullseye,
   Button,
@@ -27,13 +26,14 @@ import {
   Tr,
 } from "@patternfly/react-table";
 import { NamespaceBar } from "../shell/NamespaceBar.tsx";
+import { useNavigation } from "../ConsoleContext.tsx";
 import { useWorkflowFamilies, type WorkflowFamily } from "../queries.ts";
 
 const versionHref = (family: WorkflowFamily, version: string): string =>
   `/workflows/${encodeURIComponent(family.key.namespace)}/${encodeURIComponent(family.key.workflowName)}/${encodeURIComponent(version)}`;
 
 export const WorkflowsPage = (): ReactNode => {
-  const navigate = useNavigate();
+  const { navigate } = useNavigation();
   const { data, isPending, isError } = useWorkflowFamilies();
   const [expanded, setExpanded] = useState<Readonly<Record<string, boolean>>>({});
 

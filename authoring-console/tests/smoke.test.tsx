@@ -23,8 +23,7 @@ vi.mock("@openworkflowspec/diagram-editor", () => ({
   DiagramEditor: ({ content }: { content: string }) => <div data-testid="cncf-editor">{content}</div>,
 }));
 
-import { App } from "../src/app/App.tsx";
-import type { ConsoleServices } from "../src/app/ConsoleContext.tsx";
+import { App, type AppServices } from "../src/app/App.tsx";
 import { createConsoleStorage } from "../src/app/storage.ts";
 import { createFetchGatewayTransport } from "../src/fixtures/gateway-transport.ts";
 import { createFixtureKubernetesTransport } from "../src/fixtures/transports/kubernetes.ts";
@@ -32,7 +31,7 @@ import { createFixtureCapabilityTransport } from "../src/fixtures/transports/cap
 import { launcherSession } from "../src/fixtures/sessions.ts";
 import { devBaselineCompatibilityManifest } from "../src/fixtures/compatibility-baseline.ts";
 
-const makeServices = (): ConsoleServices => ({
+const makeServices = (): AppServices => ({
   session: launcherSession,
   gateway: createFetchGatewayTransport(),
   kubernetes: createFixtureKubernetesTransport(),

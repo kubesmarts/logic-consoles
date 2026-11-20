@@ -5,16 +5,21 @@
  * the launcher/static build; MemoryRouter in tests). Services are injected so the app
  * runs identically against fixtures, the launcher API or the direct-browser adapter.
  */
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ThemePreference } from "../contracts/index.ts";
 import { ConsoleProvider, type ConsoleServices } from "./ConsoleContext.tsx";
+import { useReactRouterNavigation } from "./navigation.tsx";
 import { ThemeProvider } from "./theme.tsx";
 import { AppShell } from "./shell/AppShell.tsx";
 import { AppRoutes, type FeatureRoute } from "./routes.tsx";
 
+/** Services as supplied by a host; `useNavigation` defaults to the react-router adapter. */
+export type AppServices = Omit<ConsoleServices, "useNavigation"> &
+  Partial<Pick<ConsoleServices, "useNavigation">>;
+
 export interface AppProps {
-  readonly services: ConsoleServices;
+  readonly services: AppServices;
   readonly featureRoutes?: readonly FeatureRoute[];
   readonly initialThemePreference?: ThemePreference;
   readonly queryClient?: QueryClient;
@@ -37,11 +42,15 @@ export const App = ({
   queryClient,
 }: AppProps): ReactNode => {
   const [client] = useState(() => queryClient ?? createDefaultQueryClient());
+  const resolvedServices = useMemo<ConsoleServices>(
+    () => ({ ...services, useNavigation: services.useNavigation ?? useReactRouterNavigation }),
+    [services],
+  );
 
   return (
     <ThemeProvider initialPreference={initialThemePreference}>
       <QueryClientProvider client={client}>
-        <ConsoleProvider services={services}>
+        <ConsoleProvider services={resolvedServices}>
           <AppShell>
             <AppRoutes featureRoutes={featureRoutes} />
           </AppShell>
