@@ -6,8 +6,8 @@
  * E1 does NOT publish — that is E2. This workspace produces a finished draft that E2
  * can publish via the hand-off hook (`useAuthoringContext`).
  */
-import { useState, useEffect, type ReactNode } from "react";
-import { useNavigate, useParams, useBlocker } from "react-router-dom";
+import { useState, type ReactNode } from "react";
+import { useNavigate, useBlocker } from "react-router-dom";
 import {
   Button,
   Content,
@@ -22,91 +22,47 @@ import {
   ToolbarItem,
   Alert,
 } from "@patternfly/react-core";
-import { parse as parseYaml } from "yaml";
 import { WorkflowEditor } from "./WorkflowEditor.tsx";
 import { ExampleCatalog } from "./ExampleCatalog.tsx";
-import { INPUT_SCHEMA_SNIPPET, type ParsedWorkflowIdentity } from "./types.ts";
+import { INPUT_SCHEMA_SNIPPET } from "./types.ts";
+import { useAuthoringState, BLANK_WORKFLOW_TEMPLATE } from "./AuthoringProvider.tsx";
 import { useConsole } from "../app/ConsoleContext.tsx";
 import type { WorkflowDraft, DraftSaveOutcome } from "../contracts/index.ts";
 
-const BLANK_WORKFLOW_TEMPLATE = `document:
-  dsl: '1.0.0'
-  namespace: default
-  name: my-workflow
-  version: '1.0.0'
-do:
-  - step1:
-      set:
-        result: "Hello from my workflow"
-`;
-
 /**
- * Parse workflow identity from YAML. Returns undefined if invalid or missing fields.
+ * Pure function to decide whether navigation should be blocked.
+ * Exported for unit testing.
  */
-const parseWorkflowIdentity = (yaml: string): ParsedWorkflowIdentity | undefined => {
-  try {
-    const parsed = parseYaml(yaml) as unknown;
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "document" in parsed &&
-      typeof parsed.document === "object" &&
-      parsed.document !== null
-    ) {
-      const doc = parsed.document as Record<string, unknown>;
-      const name = typeof doc.name === "string" ? doc.name : undefined;
-      const version = typeof doc.version === "string" ? doc.version : undefined;
-      const namespace = typeof doc.namespace === "string" ? doc.namespace : "default";
-      if (name && version) {
-        return { workflowName: name, version, namespace };
-      }
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
+export const shouldBlockNavigation = (
+  hasUnsavedChanges: boolean,
+  currentPath: string,
+  nextPath: string,
+): boolean => {
+  return hasUnsavedChanges && currentPath !== nextPath;
 };
 
 export const AuthoringWorkspace = (): ReactNode => {
   const { storage, session } = useConsole();
   const navigate = useNavigate();
-  const { draftId } = useParams<{ draftId?: string }>();
+  const {
+    workflowYaml,
+    setWorkflowYaml,
+    currentDraftId,
+    setCurrentDraftId,
+    setOriginalYaml,
+    hasUnsavedChanges,
+    parsedIdentity,
+  } = useAuthoringState();
 
-  const [workflowYaml, setWorkflowYaml] = useState(BLANK_WORKFLOW_TEMPLATE);
-  const [currentDraftId, setCurrentDraftId] = useState<string | undefined>(draftId);
-  const [originalYaml, setOriginalYaml] = useState(BLANK_WORKFLOW_TEMPLATE);
   const [showExampleCatalog, setShowExampleCatalog] = useState(false);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
   const [lastSaveOutcome, setLastSaveOutcome] = useState<DraftSaveOutcome | undefined>(undefined);
 
-  const hasUnsavedChanges = workflowYaml !== originalYaml;
-  const parsedIdentity = parseWorkflowIdentity(workflowYaml);
-
-  // Load draft on mount if draftId is provided
-  useEffect(() => {
-    if (draftId) {
-      const draft = storage.getDraft(draftId);
-      if (draft) {
-        setWorkflowYaml(draft.workflowYaml);
-        setOriginalYaml(draft.workflowYaml);
-        setCurrentDraftId(draft.id);
-      }
-    }
-  }, [draftId, storage]);
-
   // Guard against unsaved work on navigation
-  // Note: useBlocker requires a data router (createBrowserRouter), which is not
-  // available in the MemoryRouter test environment. Tests should verify the guard
-  // logic separately or use a data router.
-  const shouldBlock = ({ currentLocation, nextLocation }: { currentLocation: { pathname: string }; nextLocation: { pathname: string } }) => {
-    return hasUnsavedChanges && currentLocation.pathname !== nextLocation.pathname;
-  };
-  try {
-    useBlocker(shouldBlock);
-  } catch {
-    // MemoryRouter in tests doesn't support useBlocker; silently skip
-  }
+  useBlocker(({ currentLocation, nextLocation }) =>
+    shouldBlockNavigation(hasUnsavedChanges, currentLocation.pathname, nextLocation.pathname),
+  );
 
   const handleSaveDraft = (): void => {
     const id = currentDraftId ?? `draft-${Date.now()}`;
@@ -133,7 +89,7 @@ export const AuthoringWorkspace = (): ReactNode => {
       setCurrentDraftId(id);
       setSaveError(undefined);
       // Update URL if this is a new draft
-      if (!draftId) {
+      if (!currentDraftId) {
         navigate(`/authoring/${id}`, { replace: true });
       }
     } else {

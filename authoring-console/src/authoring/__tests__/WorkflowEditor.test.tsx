@@ -113,4 +113,53 @@ describe("WorkflowEditor", () => {
 
     expect(screen.getByText(/Enter workflow YAML to see diagram/i)).toBeInTheDocument();
   });
+
+  it("switches to tabbed layout on narrow screens", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+
+    // Mock narrow screen width
+    Object.defineProperty(window, "innerWidth", {
+      writable: true,
+      configurable: true,
+      value: 800, // Below 1024px threshold
+    });
+
+    render(<WorkflowEditor value={validYaml} onChange={onChange} />);
+
+    // Should show tabs instead of side-by-side
+    const yamlTab = screen.getByRole("tab", { name: /Workflow YAML/i });
+    const diagramTab = screen.getByRole("tab", { name: /Diagram/i });
+
+    expect(yamlTab).toBeInTheDocument();
+    expect(diagramTab).toBeInTheDocument();
+
+    // Switch to diagram tab
+    await user.click(diagramTab);
+
+    // Both tabs should still be visible
+    expect(yamlTab).toBeInTheDocument();
+    expect(diagramTab).toBeInTheDocument();
+  });
+
+  it("uses side-by-side layout on wide screens", () => {
+    const onChange = vi.fn();
+
+    // Mock wide screen width
+    Object.defineProperty(window, "innerWidth", {
+      writable: true,
+      configurable: true,
+      value: 1920, // Above 1024px threshold
+    });
+
+    render(<WorkflowEditor value={validYaml} onChange={onChange} />);
+
+    // Should NOT show tabs
+    expect(screen.queryByRole("tab", { name: /Workflow YAML/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Diagram/i })).not.toBeInTheDocument();
+
+    // Both editor and preview should be visible side-by-side
+    expect(screen.getByTestId("yaml-editor")).toBeInTheDocument();
+    expect(screen.getByTestId("diagram-preview")).toBeInTheDocument();
+  });
 });

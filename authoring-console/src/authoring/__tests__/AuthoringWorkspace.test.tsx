@@ -5,14 +5,16 @@
  * - Invalid YAML stales preview but stays editable
  * - Draft save→reload round-trip
  * - Storage error keeps in-memory draft + export
+ * - Navigation guard blocks on unsaved changes
  * - Narrow-screen tab switch
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AuthoringWorkspace } from "../AuthoringWorkspace.tsx";
+import { AuthoringProvider } from "../AuthoringProvider.tsx";
+import { AuthoringWorkspace, shouldBlockNavigation } from "../AuthoringWorkspace.tsx";
 import { ConsoleProvider, type ConsoleServices } from "../../app/ConsoleContext.tsx";
 import type { ConsoleStorage, DraftSaveOutcome, WorkflowDraft } from "../../contracts/index.ts";
 import { launcherSession } from "../../fixtures/sessions.ts";
@@ -82,15 +84,45 @@ const createMockServices = (storage: ConsoleStorage): ConsoleServices => ({
 const renderWorkspace = (storage: ConsoleStorage = createMockStorage()) => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const services = createMockServices(storage);
-  return render(
-    <MemoryRouter initialEntries={["/authoring"]}>
-      <QueryClientProvider client={queryClient}>
-        <ConsoleProvider services={services}>
-          <AuthoringWorkspace />
-        </ConsoleProvider>
-      </QueryClientProvider>
-    </MemoryRouter>,
+
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/authoring",
+        element: (
+          <ConsoleProvider services={services}>
+            <AuthoringProvider>
+              <AuthoringWorkspace />
+            </AuthoringProvider>
+          </ConsoleProvider>
+        ),
+      },
+      {
+        path: "/authoring/:draftId",
+        element: (
+          <ConsoleProvider services={services}>
+            <AuthoringProvider>
+              <AuthoringWorkspace />
+            </AuthoringProvider>
+          </ConsoleProvider>
+        ),
+      },
+      {
+        path: "/other",
+        element: <div>Other page</div>,
+      },
+    ],
+    { initialEntries: ["/authoring"] },
   );
+
+  return {
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    ),
+    router,
+  };
 };
 
 describe("AuthoringWorkspace", () => {
@@ -129,7 +161,7 @@ describe("AuthoringWorkspace", () => {
     });
   });
 
-  it("handles storage failure and preserves in-memory draft", async () => {
+  it("handles storage failure, preserves in-memory draft, and allows export", async () => {
     const user = userEvent.setup();
     const storage = createMockStorage({
       saveDraft: vi.fn(
@@ -140,25 +172,7 @@ describe("AuthoringWorkspace", () => {
         }),
       ),
     });
-    renderWorkspace(storage);
 
-    const editor = await screen.findByTestId("yaml-editor");
-    await user.type(editor, " # my change");
-
-    const saveButton = await screen.findByText("Save draft");
-    await user.click(saveButton);
-
-    await waitFor(() => {
-      expect(screen.getByText(/Storage quota exceeded/i)).toBeInTheDocument();
-    });
-
-    // Verify draft is still in editor (not lost)
-    expect((editor as HTMLTextAreaElement).value).toContain("# my change");
-  });
-
-  it("exports YAML", async () => {
-    const user = userEvent.setup();
-    const storage = createMockStorage();
     // Mock createObjectURL and anchor element
     global.URL.createObjectURL = vi.fn(() => "blob:mock");
     global.URL.revokeObjectURL = vi.fn();
@@ -174,10 +188,25 @@ describe("AuthoringWorkspace", () => {
 
     renderWorkspace(storage);
 
+    const editor = await screen.findByTestId("yaml-editor");
+    await user.type(editor, " # my change");
+
+    const saveButton = await screen.findByText("Save draft");
+    await user.click(saveButton);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Storage quota exceeded/i)).toBeInTheDocument();
+    });
+
+    // Verify draft is still in editor (not lost)
+    expect((editor as HTMLTextAreaElement).value).toContain("# my change");
+
+    // Verify export still works after storage failure
     const actionsButton = await screen.findByText("Actions");
     await user.click(actionsButton);
 
     const exportButton = await screen.findByText("Export YAML");
+    expect(exportButton).toBeInTheDocument();
     await user.click(exportButton);
 
     await waitFor(() => {
@@ -251,5 +280,23 @@ describe("AuthoringWorkspace", () => {
       // Should reset to template
       expect((editor as HTMLTextAreaElement).value).toContain("my-workflow");
     });
+  });
+});
+
+describe("shouldBlockNavigation", () => {
+  it("blocks navigation when there are unsaved changes to a different path", () => {
+    expect(shouldBlockNavigation(true, "/authoring", "/other")).toBe(true);
+  });
+
+  it("does not block navigation when there are no unsaved changes", () => {
+    expect(shouldBlockNavigation(false, "/authoring", "/other")).toBe(false);
+  });
+
+  it("does not block navigation to the same path", () => {
+    expect(shouldBlockNavigation(true, "/authoring", "/authoring")).toBe(false);
+  });
+
+  it("does not block when navigating to same path even with unsaved changes", () => {
+    expect(shouldBlockNavigation(true, "/authoring/123", "/authoring/123")).toBe(false);
   });
 });

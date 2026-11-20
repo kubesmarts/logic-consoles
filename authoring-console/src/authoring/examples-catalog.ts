@@ -53,7 +53,7 @@ const greetingWithInputExample: WorkflowExample = {
   title: "Greeting with Input",
   description: "Workflow that accepts a name input and returns a personalized greeting",
   license: "Apache 2.0",
-  sourceUrl: "https://github.com/open-workflow-specification/specification/blob/main/examples/",
+  sourceUrl: "https://github.com/open-workflow-specification/specification/blob/main/examples/greeting-workflow.yaml",
   prerequisites: [],
   yaml: `document:
   dsl: '1.0.0'
@@ -85,7 +85,7 @@ const httpCallExample: WorkflowExample = {
   title: "HTTP API Call",
   description: "Workflow that makes an HTTP GET request to an external API",
   license: "Apache 2.0",
-  sourceUrl: "https://github.com/open-workflow-specification/specification/blob/main/examples/",
+  sourceUrl: "https://github.com/open-workflow-specification/specification/blob/main/examples/http-call-workflow.yaml",
   prerequisites: ["Network access", "HTTP endpoint"],
   yaml: `document:
   dsl: '1.0.0'
@@ -110,7 +110,7 @@ const sequentialTasksExample: WorkflowExample = {
   title: "Sequential Tasks",
   description: "Workflow with multiple sequential steps demonstrating data flow",
   license: "Apache 2.0",
-  sourceUrl: "https://github.com/open-workflow-specification/specification/blob/main/examples/",
+  sourceUrl: "https://github.com/open-workflow-specification/specification/blob/main/examples/sequential-workflow.yaml",
   prerequisites: [],
   yaml: `document:
   dsl: '1.0.0'
