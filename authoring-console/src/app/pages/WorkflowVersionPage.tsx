@@ -8,7 +8,6 @@
  * establishes the target for Diagram, Run and Instance history.
  */
 import { useMemo, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -32,14 +31,13 @@ import {
   Tabs,
   Title,
 } from "@patternfly/react-core";
-import { Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
 import { stringify as stringifyYaml } from "yaml";
 import { DiagramPreview } from "../../editors/DiagramPreview.tsx";
 import { YamlEditor } from "../../editors/YamlEditor.tsx";
+import { InstanceHistoryView } from "../../shared/operations/index.ts";
 import { useConsole, useNavigation } from "../ConsoleContext.tsx";
 import { useWorkflowCr, useWorkflowFamilies, useWorkflowFlow } from "../queries.ts";
 import type { WorkflowVersionKey } from "../../contracts/index.ts";
-import { workflowVersionKeyToString } from "../../contracts/index.ts";
 
 export const WorkflowVersionPage = (): ReactNode => {
   const { params, navigate } = useNavigation();
@@ -194,51 +192,6 @@ const YamlTab = ({
 };
 
 const InstanceHistoryTab = ({ versionKey }: { readonly versionKey: WorkflowVersionKey }): ReactNode => {
-  const { session, gateway } = useConsole();
-  const query = useQuery({
-    queryKey: [session.sessionId, "instances", workflowVersionKeyToString(versionKey)],
-    queryFn: ({ signal }) =>
-      gateway.listInstances(
-        { namespace: versionKey.namespace, name: versionKey.workflowName, version: versionKey.version },
-        signal,
-      ),
-  });
-
-  if (query.isPending) return <Spinner aria-label="Loading instance history" />;
-  if (query.isError) {
-    return (
-      <EmptyState titleText="History unavailable" headingLevel="h2" status="warning">
-        <EmptyStateBody>The gateway could not return instance history.</EmptyStateBody>
-      </EmptyState>
-    );
-  }
-  if (!query.data || query.data.length === 0) {
-    return (
-      <EmptyState titleText="No instances" headingLevel="h2">
-        <EmptyStateBody>No executions have been indexed for this version.</EmptyStateBody>
-      </EmptyState>
-    );
-  }
-  return (
-    <Table aria-label="Instance history" variant="compact">
-      <Thead>
-        <Tr>
-          <Th>ID</Th>
-          <Th>Status</Th>
-          <Th>Started</Th>
-          <Th>Ended</Th>
-        </Tr>
-      </Thead>
-      <Tbody>
-        {query.data.map((instance) => (
-          <Tr key={instance.id}>
-            <Td dataLabel="ID">{instance.id}</Td>
-            <Td dataLabel="Status">{instance.status}</Td>
-            <Td dataLabel="Started">{instance.startedAt ?? "—"}</Td>
-            <Td dataLabel="Ended">{instance.endedAt ?? "—"}</Td>
-          </Tr>
-        ))}
-      </Tbody>
-    </Table>
-  );
+  const { gateway } = useConsole();
+  return <InstanceHistoryView versionKey={versionKey} gateway={gateway} />;
 };
