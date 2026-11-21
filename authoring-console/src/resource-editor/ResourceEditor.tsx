@@ -48,6 +48,8 @@ export interface ResourceEditorProps<TSpec = unknown, TStatus = unknown> {
   readonly onWriteSuccess?: (result: KubeObject<TSpec, TStatus>) => void;
   /** Optional callback when dry-run succeeds. */
   readonly onDryRunSuccess?: (admitted: KubeObject<TSpec, TStatus>) => void;
+  /** Optional callback when write fails. */
+  readonly onWriteError?: (error: unknown) => void;
 }
 
 export const ResourceEditor = <TSpec = unknown, TStatus = unknown>({
@@ -59,6 +61,7 @@ export const ResourceEditor = <TSpec = unknown, TStatus = unknown>({
   renderForm,
   onWriteSuccess,
   onDryRunSuccess,
+  onWriteError,
 }: ResourceEditorProps<TSpec, TStatus>): ReactNode => {
   const controller = useResourceEditor<TSpec, TStatus>({
     transport,
@@ -87,7 +90,10 @@ export const ResourceEditor = <TSpec = unknown, TStatus = unknown>({
       if (onWriteSuccess) {
         onWriteSuccess(result);
       }
-    } catch {
+    } catch (err) {
+      if (onWriteError) {
+        onWriteError(err);
+      }
       // Errors are already in state.errors
     }
   };

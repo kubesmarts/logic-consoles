@@ -18,9 +18,13 @@ import {
   DescriptionListDescription,
   DescriptionListGroup,
   DescriptionListTerm,
+  Dropdown,
+  DropdownItem,
+  DropdownList,
   EmptyState,
   EmptyStateBody,
   Label,
+  MenuToggle,
   PageSection,
   Spinner,
   Tab,
@@ -38,13 +42,24 @@ import type { WorkflowVersionKey } from "../../contracts/index.ts";
 import { workflowVersionKeyToString } from "../../contracts/index.ts";
 
 export const WorkflowVersionPage = (): ReactNode => {
-  const { params } = useNavigation();
+  const { params, navigate } = useNavigation();
   const namespace = decodeURIComponent(params["namespace"] ?? "");
   const workflowName = decodeURIComponent(params["workflowName"] ?? "");
   const version = decodeURIComponent(params["version"] ?? "");
   const versionKey: WorkflowVersionKey = { namespace, workflowName, version };
 
   const [activeTab, setActiveTab] = useState<string>("details");
+  const [actionsOpen, setActionsOpen] = useState(false);
+
+  const handleUpdateVersion = (): void => {
+    const params = new URLSearchParams({
+      mode: "update",
+      namespace,
+      workflowName,
+      version,
+    });
+    navigate(`/publish?${params.toString()}`);
+  };
 
   const families = useWorkflowFamilies();
   const row = useMemo(
@@ -85,10 +100,33 @@ export const WorkflowVersionPage = (): ReactNode => {
           <BreadcrumbItem>{workflowName}</BreadcrumbItem>
           <BreadcrumbItem isActive>{version}</BreadcrumbItem>
         </Breadcrumb>
-        <Title headingLevel="h1">
-          {workflowName} <Label color="blue">{version}</Label>
-        </Title>
-        <Content component="p">Runtime {row.runtimeName || "—"}</Content>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <Title headingLevel="h1">
+              {workflowName} <Label color="blue">{version}</Label>
+            </Title>
+            <Content component="p">Runtime {row.runtimeName || "—"}</Content>
+          </div>
+          <Dropdown
+            isOpen={actionsOpen}
+            onOpenChange={setActionsOpen}
+            toggle={(toggleRef) => (
+              <MenuToggle
+                ref={toggleRef}
+                onClick={() => setActionsOpen(!actionsOpen)}
+                variant="primary"
+              >
+                Actions
+              </MenuToggle>
+            )}
+          >
+            <DropdownList>
+              <DropdownItem key="update" onClick={handleUpdateVersion}>
+                Update this version
+              </DropdownItem>
+            </DropdownList>
+          </Dropdown>
+        </div>
       </PageSection>
       <PageSection>
         <Tabs activeKey={activeTab} onSelect={(_event, key) => setActiveTab(String(key))}>
