@@ -164,18 +164,14 @@ export const PlatformSetupWizard = ({ onComplete, onCancel }: PlatformSetupWizar
   ];
 
   return (
-    <div>
-      <h1>Set up platform</h1>
-      <p>Configure the cluster-scoped ClusterLogicPlatform</p>
-      {steps[currentStep]}
-      <div style={{ marginTop: "1rem", display: "flex", gap: "1rem" }}>
-        {currentStep > 0 && <button onClick={() => setCurrentStep(currentStep - 1)}>Back</button>}
-        {currentStep < steps.length - 1 && (
-          <button onClick={() => setCurrentStep(currentStep + 1)}>Next</button>
-        )}
-        {currentStep === steps.length - 1 && <button onClick={onCancel}>Complete</button>}
-        <button onClick={onCancel}>Cancel</button>
-      </div>
-    </div>
+    <Wizard
+      title="Set up platform"
+      steps={steps as any}
+      startAtStep={currentStep}
+      onStepChange={((_event: unknown, newStep: any) => {
+        setCurrentStep(newStep.index ?? currentStep);
+      }) as any}
+      onClose={onCancel}
+    />
   );
 };
