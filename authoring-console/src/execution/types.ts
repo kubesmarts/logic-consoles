@@ -47,6 +47,7 @@ export type InstanceAction = "suspend" | "resume" | "cancel";
 export interface LifecycleState {
   readonly instanceId: string;
   readonly isActing: boolean;
+  readonly actingOn: InstanceAction | null;
   readonly result: InstanceActionOutcome | null;
   readonly error: string | null;
 }

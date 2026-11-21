@@ -18,7 +18,6 @@ import {
   ModalFooter,
   ModalHeader,
   ModalVariant,
-  Spinner,
 } from "@patternfly/react-core";
 import type { DefinitionResource, GatewayTransport } from "../contracts/index.ts";
 import type { InstanceAction, LifecycleState } from "./types.ts";
@@ -39,6 +38,7 @@ export const InstanceLifecycle = ({
   const [state, setState] = useState<LifecycleState>({
     instanceId,
     isActing: false,
+    actingOn: null,
     result: null,
     error: null,
   });
@@ -56,7 +56,7 @@ export const InstanceLifecycle = ({
   };
 
   const executeAction = async (action: InstanceAction): Promise<void> => {
-    setState((s) => ({ ...s, isActing: true, result: null, error: null }));
+    setState((s) => ({ ...s, isActing: true, actingOn: action, result: null, error: null }));
 
     try {
       const link =
@@ -89,6 +89,7 @@ export const InstanceLifecycle = ({
       setState((s) => ({
         ...s,
         isActing: false,
+        actingOn: null,
         result: { action, httpStatus: result.httpStatus, raw: result.raw },
       }));
 
@@ -98,7 +99,7 @@ export const InstanceLifecycle = ({
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : `${action} failed`;
-      setState((s) => ({ ...s, isActing: false, error: message }));
+      setState((s) => ({ ...s, isActing: false, actingOn: null, error: message }));
     }
   };
 
@@ -127,12 +128,9 @@ export const InstanceLifecycle = ({
                 variant="secondary"
                 onClick={() => handleAction("suspend")}
                 isDisabled={state.isActing}
+                isLoading={state.actingOn === "suspend"}
               >
-                {state.isActing && state.result?.action === "suspend" ? (
-                  <Spinner size="sm" />
-                ) : (
-                  "Suspend"
-                )}
+                Suspend
               </Button>
             )}
             {resumeAvailable && (
@@ -140,12 +138,9 @@ export const InstanceLifecycle = ({
                 variant="secondary"
                 onClick={() => handleAction("resume")}
                 isDisabled={state.isActing}
+                isLoading={state.actingOn === "resume"}
               >
-                {state.isActing && state.result?.action === "resume" ? (
-                  <Spinner size="sm" />
-                ) : (
-                  "Resume"
-                )}
+                Resume
               </Button>
             )}
             {cancelAvailable && (
@@ -153,12 +148,9 @@ export const InstanceLifecycle = ({
                 variant="danger"
                 onClick={() => handleAction("cancel")}
                 isDisabled={state.isActing}
+                isLoading={state.actingOn === "cancel"}
               >
-                {state.isActing && state.result?.action === "cancel" ? (
-                  <Spinner size="sm" />
-                ) : (
-                  "Cancel instance"
-                )}
+                Cancel instance
               </Button>
             )}
           </div>

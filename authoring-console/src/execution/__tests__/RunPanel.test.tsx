@@ -325,6 +325,105 @@ describe("RunPanel", () => {
     });
   });
 
+  describe("Schema field rendering", () => {
+    it("renders enum field as FormSelect with all options and includes selected value in execute body", async () => {
+      const user = userEvent.setup();
+      const flow: WorkflowDocument = {
+        document: { name: "test-workflow", version: "1.0.0", dsl: "1.0.0", namespace: "default" },
+        input: {
+          schema: {
+            document: {
+              type: "object",
+              properties: {
+                priority: { type: "string", enum: ["low", "medium", "high"] },
+              },
+            },
+          },
+        },
+        do: [],
+      } as unknown as WorkflowDocument;
+
+      const executeSync = vi.fn().mockResolvedValue({ output: {}, raw: {} });
+      const gateway = createMockGateway({ executeSync });
+      const definition = createDefinition();
+
+      render(<RunPanel definition={definition} flow={flow} gateway={gateway} isOpen={true} onClose={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Priority")).toBeInTheDocument();
+      });
+
+      // Verify it's a select/dropdown
+      const prioritySelect = screen.getByLabelText("Priority") as HTMLSelectElement;
+      expect(prioritySelect.tagName).toBe("SELECT");
+
+      // Verify all enum options are present
+      const options = Array.from(prioritySelect.options).map(opt => opt.value);
+      expect(options).toContain("low");
+      expect(options).toContain("medium");
+      expect(options).toContain("high");
+
+      // Select a value
+      await user.selectOptions(prioritySelect, "high");
+
+      const runButton = screen.getByRole("button", { name: /Run and wait/i });
+      await user.click(runButton);
+
+      // Verify the selected enum value is included in the execute call body
+      await waitFor(() => {
+        expect(executeSync).toHaveBeenCalledWith(
+          definition._links.executeSync,
+          { priority: "high" },
+          expect.any(AbortSignal)
+        );
+      });
+    });
+  });
+
+  describe("Validation", () => {
+    it("shows validation error for required field with minLength and does NOT call gateway", async () => {
+      const user = userEvent.setup();
+      const flow: WorkflowDocument = {
+        document: { name: "test-workflow", version: "1.0.0", dsl: "1.0.0", namespace: "default" },
+        input: {
+          schema: {
+            document: {
+              type: "object",
+              properties: {
+                username: { type: "string", minLength: 1 },
+              },
+              required: ["username"],
+            },
+          },
+        },
+        do: [],
+      } as unknown as WorkflowDocument;
+
+      const executeSync = vi.fn().mockResolvedValue({ output: {}, raw: {} });
+      const gateway = createMockGateway({ executeSync });
+      const definition = createDefinition();
+
+      render(<RunPanel definition={definition} flow={flow} gateway={gateway} isOpen={true} onClose={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Username")).toBeInTheDocument();
+      });
+
+      // Leave the field empty (defaults to ""), which violates minLength: 1
+      const runButton = screen.getByRole("button", { name: /Run and wait/i });
+      await user.click(runButton);
+
+      // Verify validation error is shown
+      await waitFor(() => {
+        // Ajv error for minLength: "/username: must NOT have fewer than 1 characters"
+        expect(screen.getByText(/must NOT have fewer than/i)).toBeInTheDocument();
+      });
+
+      // Verify gateway was NOT called
+      expect(executeSync).not.toHaveBeenCalled();
+    });
+  });
+
   describe("Error handling", () => {
     it("makes exactly one POST even on timeout", async () => {
       const user = userEvent.setup();

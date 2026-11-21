@@ -213,4 +213,86 @@ describe("InstanceLifecycle", () => {
       expect(onActionComplete).toHaveBeenCalled();
     });
   });
+
+  it("hides buttons when lifecycle links are missing", () => {
+    const gateway = createMockGateway();
+    const definition = {
+      ...createDefinition(),
+      _links: {
+        ...createDefinition()._links,
+        suspend: undefined as never,
+        resume: undefined as never,
+        cancel: undefined as never,
+      },
+    };
+
+    render(<InstanceLifecycle definition={definition} instanceId="test-123" gateway={gateway} />);
+
+    // All buttons should be hidden when their corresponding links are missing
+    expect(screen.queryByRole("button", { name: /Suspend/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Resume/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Cancel instance/i })).not.toBeInTheDocument();
+  });
+
+  it("hides only specific buttons when some links are missing", () => {
+    const gateway = createMockGateway();
+    const definition = {
+      ...createDefinition(),
+      _links: {
+        ...createDefinition()._links,
+        suspend: undefined as never, // Missing suspend
+        // resume and cancel are present
+      },
+    };
+
+    render(<InstanceLifecycle definition={definition} instanceId="test-123" gateway={gateway} />);
+
+    // Suspend button should be hidden
+    expect(screen.queryByRole("button", { name: /Suspend/i })).not.toBeInTheDocument();
+
+    // Resume and Cancel should be visible
+    expect(screen.getByRole("button", { name: /Resume/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Cancel instance/i })).toBeInTheDocument();
+  });
+
+  it("shows loading state on button during action", async () => {
+    const user = userEvent.setup();
+    // Create a promise we can control to keep the action pending
+    let resolveSuspend!: (value: { instanceId: string; httpStatus: number; raw: unknown }) => void;
+    const suspendPromise = new Promise<{ instanceId: string; httpStatus: number; raw: unknown }>(
+      (resolve) => {
+        resolveSuspend = resolve;
+      }
+    );
+
+    const gateway = createMockGateway({
+      suspendInstance: vi.fn().mockReturnValue(suspendPromise),
+    });
+    const definition = createDefinition();
+
+    render(<InstanceLifecycle definition={definition} instanceId="test-123" gateway={gateway} />);
+
+    const suspendButton = screen.getByRole("button", { name: /Suspend/i });
+
+    // Before clicking, button should not be disabled
+    expect(suspendButton).not.toBeDisabled();
+
+    await user.click(suspendButton);
+
+    // During the action, button should be disabled and show loading indicator
+    await waitFor(() => {
+      expect(suspendButton).toBeDisabled();
+      // PatternFly Button with isLoading adds pf-m-in-progress class and shows a spinner
+      expect(suspendButton).toHaveClass("pf-m-in-progress");
+    });
+
+    // Resolve the action
+    resolveSuspend({ instanceId: "test-123", httpStatus: 200, raw: {} });
+
+    // After completion, button should return to normal state
+    await waitFor(() => {
+      expect(suspendButton).not.toBeDisabled();
+      expect(suspendButton).not.toHaveClass("pf-m-in-progress");
+    });
+  });
 });
