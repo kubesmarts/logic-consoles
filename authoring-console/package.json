@@ -6,15 +6,18 @@
   "description": "Authoring Console for the Logic Operator (shell, typed contracts, mock fixtures).",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run build:launcher",
+    "build:launcher": "tsc -p launcher/tsconfig.json",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node dist/launcher/index.js"
   },
   "dependencies": {
+    "@kubernetes/client-node": "2.0.2",
     "@monaco-editor/react": "4.7.0",
     "@openworkflowspec/diagram-editor": "1.1.0",
     "@patternfly/react-core": "6.7.0",
