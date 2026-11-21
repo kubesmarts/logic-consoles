@@ -31,6 +31,7 @@ interface RuntimeReviewStepProps {
   readonly onComplete?: () => void;
   readonly onCancel?: () => void;
   readonly editMode?: boolean;
+  readonly selectExistingMode?: boolean;
   readonly existingRuntime?: KubeObject<LogicFlowRuntimeCRSpec, LogicFlowRuntimeCRStatus> | null;
 }
 
@@ -41,6 +42,7 @@ export const RuntimeReviewStep = ({
   onComplete,
   onCancel,
   editMode = false,
+  selectExistingMode = false,
   existingRuntime,
 }: RuntimeReviewStepProps): ReactNode => {
   const { kubernetes } = useConsole();
@@ -52,7 +54,63 @@ export const RuntimeReviewStep = ({
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Build the CR from draft
+  // SELECT-EXISTING MODE: Read-only view, no ResourceEditor/create
+  if (selectExistingMode && existingRuntime) {
+    return (
+      <PageSection>
+        <Title headingLevel="h1">Confirm runtime selection</Title>
+        <div style={{ marginTop: "1rem", marginBottom: "2rem" }}>
+          <p>
+            You have selected an existing runtime. Review the details below and click Continue to proceed.
+          </p>
+        </div>
+
+        <dl style={{ marginBottom: "2rem" }}>
+          <dt>
+            <strong>Runtime name:</strong>
+          </dt>
+          <dd>{existingRuntime.metadata.name}</dd>
+          <dt style={{ marginTop: "0.5rem" }}>
+            <strong>Namespace:</strong>
+          </dt>
+          <dd>{existingRuntime.metadata.namespace}</dd>
+          <dt style={{ marginTop: "0.5rem" }}>
+            <strong>Persistence mode:</strong>
+          </dt>
+          <dd>{existingRuntime.spec?.persistenceMode || "Ephemeral"}</dd>
+          {existingRuntime.status?.readyReplicas !== undefined && (
+            <>
+              <dt style={{ marginTop: "0.5rem" }}>
+                <strong>Ready replicas:</strong>
+              </dt>
+              <dd>
+                {existingRuntime.status.readyReplicas} / {existingRuntime.status.replicas || 0}
+              </dd>
+            </>
+          )}
+          {existingRuntime.status?.phase && (
+            <>
+              <dt style={{ marginTop: "0.5rem" }}>
+                <strong>Status:</strong>
+              </dt>
+              <dd>{existingRuntime.status.phase}</dd>
+            </>
+          )}
+        </dl>
+
+        <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
+          <Button variant="primary" onClick={onComplete}>
+            Continue
+          </Button>
+          <Button variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+      </PageSection>
+    );
+  }
+
+  // CREATE MODE: Build the CR from draft
   const runtimeCR = buildRuntimeCR(draft);
 
   // In edit mode, merge with existing runtime to preserve resourceVersion and other fields
@@ -64,7 +122,7 @@ export const RuntimeReviewStep = ({
         }
       : runtimeCR;
 
-  // Use ResourceEditor hook for reconciliation tracking
+  // Use ResourceEditor hook for reconciliation tracking (CREATE mode only)
   const editorController = useResourceEditor<LogicFlowRuntimeCRSpec, LogicFlowRuntimeCRStatus>({
     transport: kubernetes,
     ref: {
@@ -275,7 +333,7 @@ function RuntimeReadinessTable({
     reason?: string;
   }
 
-  const components: Component[] = [
+  const baseComponents: Component[] = [
     {
       name: "Runtime name",
       status: hasStatus ? "ready" : draft.name ? "configured" : "pending",
@@ -322,17 +380,24 @@ function RuntimeReadinessTable({
       : []),
   ];
 
-  // Add status-driven failures if present
-  if (hasStatus && status && status.phase === "Failed") {
-    const readyCondition = status.conditions?.find((c) => c.type === "Ready");
-    if (readyCondition && readyCondition.status === "False") {
-      const runtimeComponent = components.find(c => c.name === "Runtime name");
-      if (runtimeComponent) {
-        runtimeComponent.status = "failed";
-        runtimeComponent.reason = readyCondition.reason || readyCondition.message;
-      }
-    }
-  }
+  // Add status-driven failures if present (map to new array instead of mutating)
+  const components = hasStatus && status && status.phase === "Failed"
+    ? (() => {
+        const readyCondition = status.conditions?.find((c) => c.type === "Ready");
+        if (readyCondition && readyCondition.status === "False") {
+          return baseComponents.map((comp) =>
+            comp.name === "Runtime name"
+              ? {
+                  ...comp,
+                  status: "failed" as ComponentStatus,
+                  reason: readyCondition.reason || readyCondition.message,
+                }
+              : comp
+          );
+        }
+        return baseComponents;
+      })()
+    : baseComponents;
 
   return (
     <Table aria-label="Runtime readiness">

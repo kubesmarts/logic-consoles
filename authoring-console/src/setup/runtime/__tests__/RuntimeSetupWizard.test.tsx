@@ -2,13 +2,64 @@
  * Tests for RuntimeSetupWizard components.
  * Component-level tests for wizard steps (not full wizard rendering due to Monaco).
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import type { RuntimeSetupDraft } from "../types.ts";
 import { ModeSelectionStep } from "../steps/ModeSelectionStep.tsx";
 import { BasicConfigStep } from "../steps/BasicConfigStep.tsx";
 import { ReplicasAndLoggingStep } from "../steps/ReplicasAndLoggingStep.tsx";
+import { SecurityStep } from "../steps/SecurityStep.tsx";
+import { RuntimeReviewStep } from "../steps/RuntimeReviewStep.tsx";
+import { ConsoleProvider, type ConsoleServices } from "../../../app/ConsoleContext.tsx";
+import type { KubernetesTransport } from "../../../contracts/index.ts";
+
+// Mock Monaco and editors
+vi.mock("@monaco-editor/react", () => ({
+  default: ({ value, options }: { value?: string; options?: { ariaLabel?: string } }) => (
+    <textarea data-testid="monaco" aria-label={options?.ariaLabel} value={value ?? ""} readOnly />
+  ),
+}));
+vi.mock("../../../editors/monaco-setup.ts", () => ({ setupMonaco: () => {} }));
+vi.mock("../../../app/theme.tsx", () => ({
+  useTheme: () => ({ theme: "light", toggleTheme: vi.fn() }),
+}));
+
+const createMockKubernetes = (overrides?: Partial<KubernetesTransport>): KubernetesTransport => ({
+  get: vi.fn(),
+  list: vi.fn().mockResolvedValue({ items: [] }),
+  create: vi.fn(),
+  update: vi.fn(),
+  dryRun: vi.fn(),
+  ...overrides,
+} as unknown as KubernetesTransport);
+
+const createMockServices = (kubernetes: KubernetesTransport): ConsoleServices => ({
+  session: {
+    sessionId: "test-session",
+    context: { contextName: "test-context", clusterDisplay: "test-cluster" },
+    namespace: "workflows",
+    mode: "launcher" as const,
+  },
+  kubernetes,
+  gateway: {} as ConsoleServices["gateway"],
+  capabilities: {
+    canI: vi.fn().mockResolvedValue({ decision: "allowed" }),
+  },
+  storage: {
+    get: vi.fn(),
+    set: vi.fn(),
+    remove: vi.fn(),
+  },
+  compatibility: { consoleVersion: "1.0.0", operatorRelease: "2.0.0" },
+  useNavigation: () => ({
+    navigate: vi.fn(),
+    currentPath: "/runtime/setup",
+    params: {},
+    location: { pathname: "/runtime/setup", search: "", hash: "", state: null },
+  }),
+} as unknown as ConsoleServices);
 
 describe("ModeSelectionStep", () => {
   it("renders select-existing and create-new modes when user can create", () => {
@@ -307,5 +358,207 @@ describe("ReplicasAndLoggingStep", () => {
         }),
       }),
     );
+  });
+});
+
+describe("SecurityStep", () => {
+  it("renders all 3 security modes", () => {
+    const draft: RuntimeSetupDraft = {
+      mode: "create-new",
+      name: "test-runtime",
+      namespace: "workflows",
+      persistenceMode: "Ephemeral",
+    };
+
+    render(
+      <SecurityStep draft={draft} onChange={vi.fn()} />,
+    );
+
+    expect(screen.getByLabelText("NONE (development only)")).toBeInTheDocument();
+    expect(screen.getByLabelText("API_KEY (machine-to-machine)")).toBeInTheDocument();
+    expect(screen.getByLabelText("OIDC (enterprise SSO)")).toBeInTheDocument();
+  });
+
+  it("shows OIDC conditional form fields when OIDC is selected", () => {
+    const draft: RuntimeSetupDraft = {
+      mode: "create-new",
+      name: "test-runtime",
+      namespace: "workflows",
+      persistenceMode: "Ephemeral",
+      security: {
+        type: "OIDC",
+        oidc: {
+          authServerUrl: "https://auth.example.com",
+          clientId: "workflow-runtime",
+          clientSecretName: "oidc-secret",
+          clientSecretKey: "value",
+        },
+      },
+    };
+
+    render(
+      <SecurityStep draft={draft} onChange={vi.fn()} />,
+    );
+
+    expect(screen.getByLabelText("OIDC auth server URL")).toBeInTheDocument();
+    expect(screen.getByLabelText("OIDC client ID")).toBeInTheDocument();
+    expect(screen.getByLabelText("OIDC client secret name")).toBeInTheDocument();
+  });
+
+  it("shows development warning alert when NONE is selected", () => {
+    const draft: RuntimeSetupDraft = {
+      mode: "create-new",
+      name: "test-runtime",
+      namespace: "workflows",
+      persistenceMode: "Ephemeral",
+      security: {
+        type: "NONE",
+      },
+    };
+
+    render(
+      <SecurityStep draft={draft} onChange={vi.fn()} />,
+    );
+
+    expect(screen.getByText("Development mode")).toBeInTheDocument();
+  });
+
+  it("shows API key configuration alert when API_KEY is selected", () => {
+    const draft: RuntimeSetupDraft = {
+      mode: "create-new",
+      name: "test-runtime",
+      namespace: "workflows",
+      persistenceMode: "Ephemeral",
+      security: {
+        type: "API_KEY",
+        apiKey: {
+          keys: [],
+        },
+      },
+    };
+
+    render(
+      <SecurityStep draft={draft} onChange={vi.fn()} />,
+    );
+
+    expect(screen.getByText("API key configuration")).toBeInTheDocument();
+  });
+});
+
+describe("RuntimeReviewStep", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+  });
+
+  it("renders select-existing mode as read-only view without ResourceEditor", () => {
+    const draft: RuntimeSetupDraft = {
+      mode: "select-existing",
+      name: "existing-runtime",
+      namespace: "workflows",
+      persistenceMode: "Ephemeral",
+    };
+
+    const existingRuntime = {
+      apiVersion: "logic.kubesmarts.org/v1",
+      kind: "LogicFlowRuntime",
+      metadata: { name: "existing-runtime", namespace: "workflows" },
+      spec: { persistenceMode: "Ephemeral" as const },
+      status: { phase: "Running", replicas: 2, readyReplicas: 2 },
+    };
+
+    const kubernetes = createMockKubernetes();
+    const services = createMockServices(kubernetes);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConsoleProvider services={services}>
+          <RuntimeReviewStep
+            draft={draft}
+            onComplete={vi.fn()}
+            onCancel={vi.fn()}
+            selectExistingMode={true}
+            existingRuntime={existingRuntime}
+          />
+        </ConsoleProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText("Confirm runtime selection")).toBeInTheDocument();
+    expect(screen.getByText("existing-runtime")).toBeInTheDocument();
+    expect(screen.getByText("Continue")).toBeInTheDocument();
+    // Should NOT have Monaco editor in select-existing mode
+    expect(screen.queryByTestId("monaco")).not.toBeInTheDocument();
+  });
+
+  it("renders create mode with ResourceEditor", () => {
+    const draft: RuntimeSetupDraft = {
+      mode: "create-new",
+      name: "new-runtime",
+      namespace: "workflows",
+      persistenceMode: "Ephemeral",
+    };
+
+    const kubernetes = createMockKubernetes();
+    const services = createMockServices(kubernetes);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConsoleProvider services={services}>
+          <RuntimeReviewStep
+            draft={draft}
+            onComplete={vi.fn()}
+            onCancel={vi.fn()}
+          />
+        </ConsoleProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText("Review and submit runtime configuration")).toBeInTheDocument();
+    expect(screen.getByTestId("monaco")).toBeInTheDocument();
+  });
+
+  it("calls onComplete when Continue is clicked in select-existing mode", async () => {
+    const user = userEvent.setup();
+    const onComplete = vi.fn();
+    const draft: RuntimeSetupDraft = {
+      mode: "select-existing",
+      name: "existing-runtime",
+      namespace: "workflows",
+      persistenceMode: "Ephemeral",
+    };
+
+    const existingRuntime = {
+      apiVersion: "logic.kubesmarts.org/v1",
+      kind: "LogicFlowRuntime",
+      metadata: { name: "existing-runtime", namespace: "workflows" },
+      spec: { persistenceMode: "Ephemeral" as const },
+    };
+
+    const kubernetes = createMockKubernetes();
+    const services = createMockServices(kubernetes);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConsoleProvider services={services}>
+          <RuntimeReviewStep
+            draft={draft}
+            onComplete={onComplete}
+            onCancel={vi.fn()}
+            selectExistingMode={true}
+            existingRuntime={existingRuntime}
+          />
+        </ConsoleProvider>
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByText("Continue"));
+
+    expect(onComplete).toHaveBeenCalled();
+    // Verify create was NOT called (this is the CRITICAL fix verification)
+    expect(kubernetes.create).not.toHaveBeenCalled();
   });
 });

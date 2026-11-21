@@ -2,18 +2,23 @@
  * Runtimes page (Packet D2 deliverable): lists LogicFlowRuntime objects in the active namespace.
  * Displays: name, persistence mode, ready replicas, status.
  * Actions: Create new runtime, view details, view YAML.
+ * Allows entering a namespace when listing is forbidden (403).
  */
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Alert,
   Bullseye,
   Button,
   EmptyState,
   EmptyStateBody,
+  Form,
+  FormGroup,
   Modal,
   ModalVariant,
   PageSection,
   Spinner,
+  TextInput,
   Title,
   Toolbar,
   ToolbarContent,
@@ -45,7 +50,9 @@ interface RuntimeStatus {
 
 export const RuntimesPage = (): ReactNode => {
   const { session, kubernetes } = useConsole();
-  const namespace = session.namespace ?? "default";
+  const defaultNamespace = session.namespace ?? "default";
+  const [customNamespace, setCustomNamespace] = useState("");
+  const [targetNamespace, setTargetNamespace] = useState(defaultNamespace);
   const [showWizard, setShowWizard] = useState(false);
   const [selectedRuntime, setSelectedRuntime] = useState<KubeObject<
     LogicFlowRuntimeSpec,
@@ -54,14 +61,33 @@ export const RuntimesPage = (): ReactNode => {
   const [showYaml, setShowYaml] = useState(false);
 
   const query = useQuery({
-    queryKey: [session.sessionId, session.context.contextName, "runtimes", namespace],
+    queryKey: [session.sessionId, session.context.contextName, "runtimes", targetNamespace],
     queryFn: ({ signal }) =>
       kubernetes.list<LogicFlowRuntimeSpec, RuntimeStatus>(
         { group: LOGIC_GROUP, version: LOGIC_VERSION, kind: LogicKinds.LogicFlowRuntime },
-        { namespace },
+        { namespace: targetNamespace },
         signal,
       ),
   });
+
+  const isForbidden = query.isError &&
+    query.error &&
+    typeof query.error === "object" &&
+    "statusCode" in query.error &&
+    query.error.statusCode === 403;
+
+  const handleCustomNamespaceChange = useCallback(
+    (_event: React.FormEvent<HTMLInputElement>, value: string) => {
+      setCustomNamespace(value);
+    },
+    [],
+  );
+
+  const handleLoadNamespace = useCallback(() => {
+    if (customNamespace.trim()) {
+      setTargetNamespace(customNamespace.trim());
+    }
+  }, [customNamespace]);
 
   const handleCreateClick = (): void => {
     setShowWizard(true);
@@ -107,13 +133,47 @@ export const RuntimesPage = (): ReactNode => {
           </ToolbarContent>
         </Toolbar>
 
+        {isForbidden && (
+          <Alert
+            variant="warning"
+            title="Namespace listing forbidden"
+            isInline
+            style={{ marginBottom: "1rem" }}
+          >
+            You do not have permission to list runtimes in this namespace. Enter a specific namespace below to load its runtimes.
+          </Alert>
+        )}
+
+        <Form style={{ marginBottom: "1.5rem", maxWidth: "40rem" }}>
+          <FormGroup
+            label="Load runtimes from namespace"
+            fieldId="custom-namespace"
+          >
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <TextInput
+                id="custom-namespace"
+                type="text"
+                value={customNamespace}
+                onChange={handleCustomNamespaceChange}
+                aria-label="Namespace name"
+                placeholder={targetNamespace}
+              />
+              <Button variant="secondary" onClick={handleLoadNamespace} isDisabled={!customNamespace.trim()}>
+                Load
+              </Button>
+            </div>
+          </FormGroup>
+        </Form>
+
         {query.isPending ? (
           <Bullseye>
             <Spinner aria-label="Loading runtimes" />
           </Bullseye>
-        ) : query.isError ? (
+        ) : query.isError && !isForbidden ? (
           <EmptyState titleText="Runtimes unavailable" headingLevel="h2" status="danger">
-            <EmptyStateBody>Runtimes could not be read.</EmptyStateBody>
+            <EmptyStateBody>
+              {query.error instanceof Error ? query.error.message : "Runtimes could not be read."}
+            </EmptyStateBody>
           </EmptyState>
         ) : query.data && query.data.items.length > 0 ? (
           <Table aria-label="Runtimes" variant="compact">

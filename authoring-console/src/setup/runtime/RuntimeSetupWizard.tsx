@@ -187,7 +187,7 @@ export const RuntimeSetupWizard = ({
           />
         </WizardStep>
         {draft.selectedRuntimeName && selectedRuntime && (
-          <WizardStep name="Review" id="review">
+          <WizardStep name="Confirm selection" id="confirm">
             <RuntimeReviewStep
               draft={{
                 ...draft,
@@ -196,7 +196,7 @@ export const RuntimeSetupWizard = ({
               }}
               onComplete={onComplete}
               onCancel={onCancel}
-              editMode={false}
+              selectExistingMode={true}
               existingRuntime={selectedRuntime as KubeObject<
                 LogicFlowRuntimeCRSpec,
                 LogicFlowRuntimeCRStatus
