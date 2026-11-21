@@ -3,12 +3,13 @@
  * Uses ResourceEditor (from C) for full-CR review/dry-run/submit.
  * Shows per-component readiness via reconciliation state.
  */
-import { type ReactNode, useState, useCallback, useEffect, useRef } from "react";
+import { type ReactNode, useState, useCallback, useRef } from "react";
 import { PageSection, Title, Button, EmptyState, EmptyStateBody, Alert, Spinner } from "@patternfly/react-core";
 import { Table, Thead, Tbody, Tr, Th, Td } from "@patternfly/react-table";
 import { CheckCircleIcon, ClockIcon, ExclamationCircleIcon } from "@patternfly/react-icons";
 import { useConsole } from "../../app/ConsoleContext.tsx";
 import { ResourceEditor } from "../../resource-editor/ResourceEditor.tsx";
+import { useResourceEditor } from "../../resource-editor/useResourceEditor.ts";
 import { LOGIC_GROUP, LOGIC_VERSION, LogicKinds, type KubeObject } from "../../contracts/index.ts";
 import type { PlatformSetupDraft } from "../types.ts";
 import { buildPlatformCR, type ClusterLogicPlatformCRSpec, type ClusterLogicPlatformCRStatus } from "../buildPlatformCR.ts";
@@ -27,7 +28,6 @@ export const ReviewStep = ({ draft, onComplete, onCancel, editMode = false, exis
   const { kubernetes } = useConsole();
   const [postSubmitState, setPostSubmitState] = useState<PostSubmitState>("ready");
   const [submittedObject, setSubmittedObject] = useState<KubeObject<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus> | null>(null);
-  const [observedObject, setObservedObject] = useState<KubeObject<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -42,72 +42,47 @@ export const ReviewStep = ({ draft, onComplete, onCancel, editMode = false, exis
       }
     : platformCR;
 
+  // Use ResourceEditor hook for reconciliation tracking
+  const editorController = useResourceEditor<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus>({
+    transport: kubernetes,
+    ref: {
+      gvk: { group: LOGIC_GROUP, version: LOGIC_VERSION, kind: LogicKinds.ClusterLogicPlatform },
+      name: "cluster-platform",
+      namespace: "",
+    },
+    seed,
+    verb: editMode ? "update" : "create",
+    deployed: editMode ? existingPlatform ?? undefined : undefined,
+  });
+
   const handleWriteSuccess = useCallback((result: KubeObject<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus>) => {
     setSubmittedObject(result);
-    setObservedObject(result);
     setPostSubmitState("submitted");
     setError(null);
-  }, []);
+
+    // Start reconciliation tracking using C's API
+    if (!abortControllerRef.current) {
+      abortControllerRef.current = new AbortController();
+    }
+    editorController.startReconciliation(result, abortControllerRef.current.signal);
+  }, [editorController]);
 
   const handleWriteError = useCallback((err: unknown) => {
     setError(String(err));
     setPostSubmitState("error");
   }, []);
 
-  // Poll for reconciliation after submission
-  useEffect(() => {
-    if (!submittedObject || postSubmitState === "ready" || postSubmitState === "error") {
-      return;
+  // Update post-submit state based on reconciliation
+  const reconciliation = editorController.reconciliation;
+  if (reconciliation && postSubmitState !== "error") {
+    if (reconciliation.reconciled && postSubmitState !== "reconciled") {
+      setPostSubmitState("reconciled");
+    } else if (!reconciliation.reconciled && reconciliation.observed && postSubmitState === "submitted") {
+      setPostSubmitState("reconciling");
     }
+  }
 
-    // Create new abort controller for this polling session
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
-
-    const pollReconciliation = async () => {
-      try {
-        const current = await kubernetes.get<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus>(
-          {
-            gvk: { group: LOGIC_GROUP, version: LOGIC_VERSION, kind: LogicKinds.ClusterLogicPlatform },
-            name: submittedObject.metadata.name,
-            namespace: submittedObject.metadata.namespace,
-          },
-          signal,
-        );
-
-        setObservedObject(current);
-
-        // Check if reconciled
-        const reconciled =
-          current.status?.observedGeneration !== undefined &&
-          current.metadata.generation !== undefined &&
-          current.status.observedGeneration === current.metadata.generation;
-
-        if (reconciled) {
-          setPostSubmitState("reconciled");
-        } else {
-          setPostSubmitState("reconciling");
-          // Continue polling
-          if (!signal.aborted) {
-            setTimeout(() => void pollReconciliation(), 2000);
-          }
-        }
-      } catch {
-        if (!signal.aborted) {
-          // On error, keep polling
-          setTimeout(() => void pollReconciliation(), 2000);
-        }
-      }
-    };
-
-    // Start polling after a brief delay
-    const timeoutId = setTimeout(() => void pollReconciliation(), 1000);
-
-    return () => {
-      clearTimeout(timeoutId);
-      abortControllerRef.current?.abort();
-    };
-  }, [submittedObject, postSubmitState, kubernetes]);
+  const observedObject = reconciliation?.observed ?? submittedObject;
 
   // If submitted, show readiness screen
   if (postSubmitState !== "ready") {

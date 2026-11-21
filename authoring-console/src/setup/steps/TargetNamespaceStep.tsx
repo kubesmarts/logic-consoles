@@ -53,7 +53,8 @@ export const TargetNamespaceStep = ({
     queryKey: ["namespaces"],
     queryFn: ({ signal }) =>
       kubernetes.list(
-        { gvk: { group: "", version: "v1", kind: "Namespace" } },
+        { group: "", version: "v1", kind: "Namespace" },
+        {},
         signal,
       ).then((res: unknown) => {
         // Extract namespace names from response

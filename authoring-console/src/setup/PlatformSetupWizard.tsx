@@ -183,51 +183,51 @@ export const PlatformSetupWizard = ({ onComplete, onCancel, editMode = false }: 
   }
 
   // Setup wizard for absent or discovery-forbidden platform, or edit mode
-  const steps = [
-    <WizardStep name="Target namespace" id="target-namespace" key="target-namespace">
-      <TargetNamespaceStep
-        draft={draft}
-        onUpdate={handleDraftUpdate}
-        canCreateNamespace={canCreateNamespace}
-        editMode={editMode}
-      />
-    </WizardStep>,
-    <WizardStep name="Execution mode" id="execution-mode" key="execution-mode">
-      <ExecutionModeStep draft={draft} onUpdate={handleDraftUpdate} />
-    </WizardStep>,
-    ...(draft.executionMode === "history-enabled"
-      ? [
-          <WizardStep name="Data Index" id="data-index" key="data-index">
-            <DataIndexStep draft={draft} onUpdate={handleDraftUpdate} />
-          </WizardStep>,
-          <WizardStep name="Vector" id="vector" key="vector">
-            <VectorStep draft={draft} onUpdate={handleDraftUpdate} />
-          </WizardStep>,
-        ]
-      : []),
-    <WizardStep name="Gateway" id="gateway" key="gateway">
-      <GatewayStep draft={draft} onUpdate={handleDraftUpdate} />
-    </WizardStep>,
-    <WizardStep name="Review" id="review" key="review">
-      <ReviewStep
-        draft={draft}
-        onComplete={onComplete}
-        onCancel={onCancel}
-        editMode={editMode}
-        existingPlatform={existingPlatform}
-      />
-    </WizardStep>,
-  ];
-
   return (
     <Wizard
-      title={editMode ? "Edit platform configuration" : "Set up platform"}
-      steps={steps as any}
-      startAtStep={currentStep}
-      onStepChange={((_event: unknown, newStep: any) => {
-        setCurrentStep(newStep.index ?? currentStep);
-      }) as any}
+      startIndex={currentStep + 1}
+      onStepChange={(_event, currentStepObj, _prevStepObj) => {
+        // WizardStepType has an index property (1-based)
+        const newIndex = (currentStepObj as { index?: number }).index;
+        if (newIndex !== undefined) {
+          setCurrentStep(newIndex - 1); // Convert to 0-based
+        }
+      }}
       onClose={onCancel}
-    />
+    >
+      <WizardStep name="Target namespace" id="target-namespace">
+        <TargetNamespaceStep
+          draft={draft}
+          onUpdate={handleDraftUpdate}
+          canCreateNamespace={canCreateNamespace}
+          editMode={editMode}
+        />
+      </WizardStep>
+      <WizardStep name="Execution mode" id="execution-mode">
+        <ExecutionModeStep draft={draft} onUpdate={handleDraftUpdate} />
+      </WizardStep>
+      {draft.executionMode === "history-enabled" && (
+        <>
+          <WizardStep name="Data Index" id="data-index">
+            <DataIndexStep draft={draft} onUpdate={handleDraftUpdate} />
+          </WizardStep>
+          <WizardStep name="Vector" id="vector">
+            <VectorStep draft={draft} onUpdate={handleDraftUpdate} />
+          </WizardStep>
+        </>
+      )}
+      <WizardStep name="Gateway" id="gateway">
+        <GatewayStep draft={draft} onUpdate={handleDraftUpdate} />
+      </WizardStep>
+      <WizardStep name="Review" id="review">
+        <ReviewStep
+          draft={draft}
+          onComplete={onComplete}
+          onCancel={onCancel}
+          editMode={editMode}
+          existingPlatform={existingPlatform}
+        />
+      </WizardStep>
+    </Wizard>
   );
 };

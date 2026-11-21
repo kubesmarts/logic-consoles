@@ -9,8 +9,6 @@ import {
   FormGroup,
   TextInput,
   Checkbox,
-  Select,
-  SelectOption,
   Alert,
   Content,
   AlertVariant,
@@ -36,7 +34,8 @@ export const GatewayStep = ({ draft, onUpdate }: GatewayStepProps): ReactNode =>
     queryFn: ({ signal }) =>
       kubernetes
         .list(
-          { gvk: { group: "networking.k8s.io", version: "v1", kind: "IngressClass" } },
+          { group: "networking.k8s.io", version: "v1", kind: "IngressClass" },
+          {},
           signal,
         )
         .then((res: unknown) => {
@@ -118,20 +117,18 @@ export const GatewayStep = ({ draft, onUpdate }: GatewayStepProps): ReactNode =>
             </FormGroup>
 
             <FormGroup label="Ingress class" fieldId="gateway-ingress-class">
-              <Select
-                selections={gateway.ingressClassName || ""}
-                onSelect={(_, value) => handleUpdate({ ingressClassName: String(value) || undefined })}
-                isOpen={false}
-                placeholderText="Select or type ingress class"
-                isCreatable
-                isCreateOptionOnTop
-              >
+              <TextInput
+                value={gateway.ingressClassName || ""}
+                onChange={(_event, value) => handleUpdate({ ingressClassName: value || undefined })}
+                placeholder="Select or type ingress class (e.g. nginx)"
+                id="gateway-ingress-class-input"
+                list="ingress-class-list"
+              />
+              <datalist id="ingress-class-list">
                 {ingressClasses.map((ic) => (
-                  <SelectOption key={ic.name} value={ic.name}>
-                    {ic.name}
-                  </SelectOption>
+                  <option key={ic.name} value={ic.name} />
                 ))}
-              </Select>
+              </datalist>
               <FormHelperText>
                 <HelperText>
                   <HelperTextItem>Ingress controller class (e.g. nginx). Defaults to cluster default.</HelperTextItem>
