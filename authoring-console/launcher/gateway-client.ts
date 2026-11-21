@@ -33,12 +33,26 @@ export interface GatewayErrorResponse {
  * The gateway's advertised `_links` hrefs are relative (`/v1/runtime/...`).
  * Reject any absolute URL or href that could bypass the gateway origin.
  *
- * @param href - Untrusted href from browser (from definition._links)
+ * NOTE: Template placeholders like {id} should be substituted BEFORE validation.
+ * This function expects a concrete, template-free path.
+ *
+ * @param href - Untrusted href from browser (from definition._links), should be concrete (no template placeholders)
  * @param config - Gateway configuration with trusted baseUrl
  * @returns Validated relative path (pathname + search only)
  * @throws Error if href is absolute or would bypass the gateway origin
  */
 export const validateGatewayHref = (href: string, config: GatewayClientConfig): string => {
+  // Reject hrefs with backslashes (Windows path confusion, normalizer bypasses)
+  if (href.includes("\\")) {
+    throw new Error(`Rejected href with backslash: ${href}`);
+  }
+
+  // Reject hrefs with leading/embedded whitespace or control characters
+  // eslint-disable-next-line no-control-regex
+  if (href !== href.trim() || /[\x00-\x1F\x7F]/.test(href)) {
+    throw new Error(`Rejected href with whitespace or control characters`);
+  }
+
   // Reject absolute URLs with schemes (http:, https:, etc.)
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href)) {
     throw new Error(`Rejected absolute href with scheme: ${href}`);

@@ -178,7 +178,14 @@ export const handleExecuteSync = async (
 
 /**
  * Handle instance action (suspend/resume/cancel).
- * SECURITY: linkHref is UNTRUSTED browser input - validate before use.
+ * SECURITY: linkHref is UNTRUSTED browser input - validate after substitution.
+ *
+ * Template substitution happens FIRST, then validation:
+ * 1. Substitute {id} with encodeURIComponent(instanceId) - prevents injection
+ * 2. Validate the concrete path - ensures it's gateway-relative and safe
+ *
+ * This ordering prevents the validator's URL encoding from breaking the template match
+ * while still protecting against SSRF (the final concrete path is validated).
  */
 export const handleInstanceAction = async (
   config: GatewayClientConfig,
@@ -187,13 +194,13 @@ export const handleInstanceAction = async (
   signal?: AbortSignal
 ): Promise<unknown> => {
   try {
-    // Validate linkHref BEFORE substitution (SSRF prevention)
-    const validatedPath = validateGatewayHref(linkHref, config);
+    // Substitute {id} FIRST - encodeURIComponent prevents instanceId from injecting /, //, :, etc.
+    const concreteHref = linkHref.replace("{id}", encodeURIComponent(instanceId));
 
-    // Substitute {id} in the validated templated link
-    const href = validatedPath.replace("{id}", encodeURIComponent(instanceId));
+    // THEN validate the concrete path (SSRF prevention on the final path)
+    const validatedPath = validateGatewayHref(concreteHref, config);
 
-    const response = await fetchGateway(config, href, {
+    const response = await fetchGateway(config, validatedPath, {
       method: "POST",
       signal,
     });
