@@ -12,6 +12,7 @@ import {
   Breadcrumb,
   BreadcrumbItem,
   Bullseye,
+  Button,
   Content,
   DescriptionList,
   DescriptionListDescription,
@@ -31,10 +32,12 @@ import {
   Tabs,
   Title,
 } from "@patternfly/react-core";
+import { useQuery } from "@tanstack/react-query";
 import { stringify as stringifyYaml } from "yaml";
 import { DiagramPreview } from "../../editors/DiagramPreview.tsx";
 import { YamlEditor } from "../../editors/YamlEditor.tsx";
 import { InstanceHistoryView } from "../../shared/operations/index.ts";
+import { RunPanel } from "../../execution/index.ts";
 import { useConsole, useNavigation } from "../ConsoleContext.tsx";
 import { useWorkflowCr, useWorkflowFamilies, useWorkflowFlow } from "../queries.ts";
 import type { WorkflowVersionKey } from "../../contracts/index.ts";
@@ -48,6 +51,7 @@ export const WorkflowVersionPage = (): ReactNode => {
 
   const [activeTab, setActiveTab] = useState<string>("details");
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [runPanelOpen, setRunPanelOpen] = useState(false);
 
   const handleUpdateVersion = (): void => {
     const params = new URLSearchParams({
@@ -57,6 +61,11 @@ export const WorkflowVersionPage = (): ReactNode => {
       version,
     });
     navigate(`/publish?${params.toString()}`);
+  };
+
+  const handleRunWorkflow = (): void => {
+    setRunPanelOpen(true);
+    setActionsOpen(false);
   };
 
   const families = useWorkflowFamilies();
@@ -105,25 +114,29 @@ export const WorkflowVersionPage = (): ReactNode => {
             </Title>
             <Content component="p">Runtime {row.runtimeName || "—"}</Content>
           </div>
-          <Dropdown
-            isOpen={actionsOpen}
-            onOpenChange={setActionsOpen}
-            toggle={(toggleRef) => (
-              <MenuToggle
-                ref={toggleRef}
-                onClick={() => setActionsOpen(!actionsOpen)}
-                variant="primary"
-              >
-                Actions
-              </MenuToggle>
-            )}
-          >
-            <DropdownList>
-              <DropdownItem key="update" onClick={handleUpdateVersion}>
-                Update this version
-              </DropdownItem>
-            </DropdownList>
-          </Dropdown>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <Button variant="primary" onClick={handleRunWorkflow}>
+              Run this version
+            </Button>
+            <Dropdown
+              isOpen={actionsOpen}
+              onOpenChange={setActionsOpen}
+              toggle={(toggleRef) => (
+                <MenuToggle
+                  ref={toggleRef}
+                  onClick={() => setActionsOpen(!actionsOpen)}
+                >
+                  Actions
+                </MenuToggle>
+              )}
+            >
+              <DropdownList>
+                <DropdownItem key="update" onClick={handleUpdateVersion}>
+                  Update this version
+                </DropdownItem>
+              </DropdownList>
+            </Dropdown>
+          </div>
         </div>
       </PageSection>
       <PageSection>
@@ -163,8 +176,40 @@ export const WorkflowVersionPage = (): ReactNode => {
           </Tab>
         </Tabs>
       </PageSection>
+      <RunPanelWrapper versionKey={versionKey} isOpen={runPanelOpen} onClose={() => setRunPanelOpen(false)} />
     </>
   );
+};
+
+const RunPanelWrapper = ({
+  versionKey,
+  isOpen,
+  onClose,
+}: {
+  readonly versionKey: WorkflowVersionKey;
+  readonly isOpen: boolean;
+  readonly onClose: () => void;
+}): ReactNode => {
+  const { gateway } = useConsole();
+  const flow = useWorkflowFlow(versionKey);
+
+  // Get the definition resource from the catalog
+  const catalogQuery = useQuery({
+    queryKey: ["catalog"],
+    queryFn: ({ signal }) => gateway.listDefinitions(signal),
+  });
+
+  const definition = catalogQuery.data?.find(
+    (d) =>
+      d.namespace === versionKey.namespace &&
+      d.name === versionKey.workflowName &&
+      d.version === versionKey.version,
+  );
+
+  if (!isOpen) return null;
+  if (!definition || !flow.data) return null;
+
+  return <RunPanel definition={definition} flow={flow.data} gateway={gateway} isOpen={isOpen} onClose={onClose} />;
 };
 
 const DiagramTab = ({ versionKey }: { readonly versionKey: WorkflowVersionKey }): ReactNode => {

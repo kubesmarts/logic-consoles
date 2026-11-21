@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { PageSection, Title } from "@patternfly/react-core";
 import { NamespaceBar } from "../shell/NamespaceBar.tsx";
 import { TopologyView } from "../../shared/operations/index.ts";
+import { RunActionSlot } from "../../execution/index.ts";
 import { useConsole, useNavigation } from "../ConsoleContext.tsx";
 
 export const TopologyPage = (): ReactNode => {
@@ -19,7 +20,12 @@ export const TopologyPage = (): ReactNode => {
       <PageSection>
         <Title headingLevel="h1">Topology</Title>
       </PageSection>
-      <TopologyView namespace={namespace} gateway={gateway} navigation={navigation} />
+      <TopologyView
+        namespace={namespace}
+        gateway={gateway}
+        navigation={navigation}
+        renderRunAction={(node) => <RunActionSlot node={node} gateway={gateway} />}
+      />
     </>
   );
 };
