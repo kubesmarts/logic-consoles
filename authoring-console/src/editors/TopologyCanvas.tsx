@@ -15,9 +15,14 @@ import { useTheme } from "../app/theme.tsx";
 
 export interface TopologyCanvasProps {
   readonly graph: TopologyGraph;
+  /**
+   * Optional callback when a topology node is clicked in the graph.
+   * Packet F wires this to open the definition selection drawer.
+   */
+  readonly onNodeSelect?: (nodeId: string) => void;
 }
 
-export const TopologyCanvas = ({ graph }: TopologyCanvasProps): ReactNode => {
+export const TopologyCanvas = ({ graph, onNodeSelect }: TopologyCanvasProps): ReactNode => {
   const { resolved } = useTheme();
 
   const nodes = useMemo<Node[]>(
@@ -35,10 +40,14 @@ export const TopologyCanvas = ({ graph }: TopologyCanvasProps): ReactNode => {
     [graph.edges],
   );
 
+  const handleNodeClick = (nodeId: string) => {
+    onNodeSelect?.(nodeId);
+  };
+
   return (
     <div>
       <div data-testid="topology-canvas" style={{ height: "480px", width: "100%" }}>
-        <ReactFlow nodes={nodes} edges={edges} forceColorMode={resolved} fitView>
+        <ReactFlow nodes={nodes} edges={edges} forceColorMode={resolved} fitView onNodeClick={(_event, node) => handleNodeClick(node.id)}>
           <Background />
           <Controls />
         </ReactFlow>

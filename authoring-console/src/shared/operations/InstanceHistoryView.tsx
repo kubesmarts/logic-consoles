@@ -28,7 +28,7 @@ import {
   ToolbarItem,
 } from "@patternfly/react-core";
 import { Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
-import type { GatewayTransport, InstanceFilter, WorkflowVersionKey } from "../../contracts/index.ts";
+import type { GatewayTransport, InstanceFilter, WorkflowVersionKey, WorkflowInstance } from "../../contracts/index.ts";
 import type { UseQueryResult } from "@tanstack/react-query";
 
 export interface InstanceHistoryViewProps {
@@ -161,8 +161,7 @@ export const InstanceHistoryView = ({ versionKey, gateway }: InstanceHistoryView
 
 interface InstanceDetailDrawerProps {
   readonly instanceId: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  readonly detailQuery: UseQueryResult<any, Error>;
+  readonly detailQuery: UseQueryResult<WorkflowInstance, Error>;
   readonly onClose: () => void;
 }
 
@@ -190,38 +189,29 @@ const InstanceDetailDrawer = ({ instanceId, detailQuery, onClose }: InstanceDeta
               <Tbody>
                 <Tr>
                   <Td dataLabel="ID">
-                    <code style={{ wordBreak: "break-all" }}>{// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(detailQuery.data as any).id}</code>
+                    <code style={{ wordBreak: "break-all" }}>{detailQuery.data.id}</code>
                   </Td>
                 </Tr>
                 <Tr>
-                  <Td dataLabel="Status">{// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(detailQuery.data as any).status}</Td>
+                  <Td dataLabel="Status">{detailQuery.data.status}</Td>
                 </Tr>
                 <Tr>
-                  <Td dataLabel="Namespace">{// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(detailQuery.data as any).namespace}</Td>
+                  <Td dataLabel="Namespace">{detailQuery.data.namespace}</Td>
                 </Tr>
                 <Tr>
-                  <Td dataLabel="Workflow">{// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(detailQuery.data as any).name}</Td>
+                  <Td dataLabel="Workflow">{detailQuery.data.name}</Td>
                 </Tr>
                 <Tr>
-                  <Td dataLabel="Version">{// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(detailQuery.data as any).version}</Td>
+                  <Td dataLabel="Version">{detailQuery.data.version}</Td>
                 </Tr>
-                {// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(detailQuery.data as any).startedAt && (
+                {detailQuery.data.startedAt && (
                   <Tr>
-                    <Td dataLabel="Started">{// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(detailQuery.data as any).startedAt}</Td>
+                    <Td dataLabel="Started">{detailQuery.data.startedAt}</Td>
                   </Tr>
                 )}
-                {// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(detailQuery.data as any).endedAt && (
+                {detailQuery.data.endedAt && (
                   <Tr>
-                    <Td dataLabel="Ended">{// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(detailQuery.data as any).endedAt}</Td>
+                    <Td dataLabel="Ended">{detailQuery.data.endedAt}</Td>
                   </Tr>
                 )}
               </Tbody>

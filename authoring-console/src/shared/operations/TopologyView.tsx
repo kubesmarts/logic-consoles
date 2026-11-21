@@ -159,20 +159,7 @@ interface TopologyGraphViewProps {
 }
 
 const TopologyGraphView = ({ graph, onNodeSelect }: TopologyGraphViewProps): ReactNode => {
-  return (
-    <div
-      onClick={(e) => {
-        // Check if a node was clicked (simplified; real implementation would use ReactFlow's selection)
-        const target = e.target as HTMLElement;
-        if (target.closest("[data-node-id]")) {
-          const nodeId = target.closest("[data-node-id]")?.getAttribute("data-node-id");
-          if (nodeId) onNodeSelect(nodeId);
-        }
-      }}
-    >
-      <TopologyCanvas graph={graph} />
-    </div>
-  );
+  return <TopologyCanvas graph={graph} onNodeSelect={onNodeSelect} />;
 };
 
 interface TopologyListViewProps {
