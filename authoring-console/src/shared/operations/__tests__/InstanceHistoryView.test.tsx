@@ -329,16 +329,16 @@ describe("InstanceHistoryView", () => {
       expect(screen.getByText(/Instance .../)).toBeInTheDocument();
     });
 
-    // Click close button (the X button in the drawer)
-    const closeButtons = screen.getAllByRole("button").filter((btn) => btn.className.includes("close"));
-    if (closeButtons.length > 0) {
-      await user.click(closeButtons[0] as HTMLElement);
+    // Click close button in the drawer (drawer close button)
+    // PatternFly's DrawerCloseButton renders a button with aria-label "Close drawer"
+    const closeButton = screen.getByRole("button", { name: /close/i });
+    expect(closeButton).toBeTruthy();
+    await user.click(closeButton);
 
-      // Drawer should close
-      await waitFor(() => {
-        expect(screen.queryByText(/Instance .../)).not.toBeInTheDocument();
-      });
-    }
+    // Drawer should close
+    await waitFor(() => {
+      expect(screen.queryByText(/Instance .../)).not.toBeInTheDocument();
+    });
   });
 
   it("handles error loading instance detail", async () => {

@@ -219,11 +219,20 @@ const DefinitionDrawer = ({ node, onClose, navigation, renderRunAction }: Defini
     );
   }
 
-  const version = (node.details as Record<string, unknown>)?.version as string;
-  const workflowName = node.name;
+  const version = (node.details as Record<string, unknown>)?.version as string | undefined;
+  // Per gateway topology contract (operator handler.go:57 + graph.go:72):
+  // - node.name = Kubernetes CR metadata.name (e.g., "hello-world-v1-0-0")
+  // - node.label = d.Status.WorkflowName (the workflow document name, e.g., "hello-world")
+  // - node.details.version = d.Status.WorkflowVersion (e.g., "1.0.0")
+  const workflowName = node.label;
+  const crName = node.name;
   const ns = node.namespace ?? "";
 
+  // Check if workflow identity is available (reconciled state has name + version)
+  const isReconciled = workflowName && version;
+
   const handleViewVersion = (): void => {
+    if (!isReconciled) return;
     navigation.navigate(
       `/workflows/${encodeURIComponent(ns)}/${encodeURIComponent(workflowName)}/${encodeURIComponent(version)}`
     );
@@ -250,6 +259,9 @@ const DefinitionDrawer = ({ node, onClose, navigation, renderRunAction }: Defini
                 </Td>
               </Tr>
               <Tr>
+                <Td dataLabel="CR name">{crName}</Td>
+              </Tr>
+              <Tr>
                 <Td dataLabel="Namespace">{node.namespace}</Td>
               </Tr>
               <Tr>
@@ -257,9 +269,15 @@ const DefinitionDrawer = ({ node, onClose, navigation, renderRunAction }: Defini
               </Tr>
             </Tbody>
           </Table>
-          <Button onClick={handleViewVersion} variant="primary" style={{ marginTop: "1.5rem" }}>
-            View deployed version
-          </Button>
+          {isReconciled ? (
+            <Button onClick={handleViewVersion} variant="primary" style={{ marginTop: "1.5rem" }}>
+              View deployed version
+            </Button>
+          ) : (
+            <div style={{ marginTop: "1.5rem", padding: "0.75rem", backgroundColor: "#f0f0f0", borderRadius: "4px" }}>
+              <small>Workflow name and version not yet available. Please wait for reconciliation.</small>
+            </div>
+          )}
           {renderRunAction && (
             <div style={{ marginTop: "1rem" }}>
               {renderRunAction(node)}

@@ -299,20 +299,19 @@ describe("TopologyView", () => {
     const toggleButton = screen.getByText("Show list");
     await user.click(toggleButton);
 
-    // Click on a definition row (hello-world 1.0.0)
+    // Click on a definition row (hello-world)
     const rows = screen.getAllByRole("row");
-    const definitionRow = rows.find((r) => within(r).queryByText("hello-world 1.0.0"));
+    const definitionRow = rows.find((r) => within(r).queryByText("hello-world"));
 
-    if (definitionRow) {
-      await user.click(definitionRow);
+    expect(definitionRow).toBeTruthy();
+    await user.click(definitionRow!);
 
-      // Drawer should open with definition details
-      await waitFor(() => {
-        expect(screen.getByText("Definition Details")).toBeInTheDocument();
-      });
+    // Drawer should open with definition details
+    await waitFor(() => {
+      expect(screen.getByText("Definition Details")).toBeInTheDocument();
+    });
 
-      expect(screen.getByText("View deployed version")).toBeInTheDocument();
-    }
+    expect(screen.getByText("View deployed version")).toBeInTheDocument();
   });
 
   it("navigates to deployed version when drawer button clicked", async () => {
@@ -339,22 +338,21 @@ describe("TopologyView", () => {
 
     // Click on a definition row
     const rows = screen.getAllByRole("row");
-    const definitionRow = rows.find((r) => within(r).queryByText("hello-world 1.0.0"));
+    const definitionRow = rows.find((r) => within(r).queryByText("hello-world"));
 
-    if (definitionRow) {
-      await user.click(definitionRow);
+    expect(definitionRow).toBeTruthy();
+    await user.click(definitionRow!);
 
-      // Click "View deployed version" button
-      const viewButton = await screen.findByText("View deployed version");
-      await user.click(viewButton);
+    // Click "View deployed version" button
+    const viewButton = await screen.findByText("View deployed version");
+    await user.click(viewButton);
 
-      // Check navigation was called
-      await waitFor(() => {
-        expect(navigate).toHaveBeenCalledWith(
-          expect.stringContaining("/workflows/default/hello-world/1.0.0")
-        );
-      });
-    }
+    // Check navigation was called with workflow name (from node.label), not CR name
+    await waitFor(() => {
+      expect(navigate).toHaveBeenCalledWith(
+        expect.stringContaining("/workflows/default/hello-world/1.0.0")
+      );
+    });
   });
 
   it("renders runAction slot when provided in definition drawer", async () => {
@@ -382,19 +380,18 @@ describe("TopologyView", () => {
 
     // Click on a definition row
     const rows = screen.getAllByRole("row");
-    const definitionRow = rows.find((r) => within(r).queryByText("hello-world 1.0.0"));
+    const definitionRow = rows.find((r) => within(r).queryByText("hello-world"));
 
-    if (definitionRow) {
-      await user.click(definitionRow);
+    expect(definitionRow).toBeTruthy();
+    await user.click(definitionRow!);
 
-      // Check that runAction slot is rendered
-      await waitFor(() => {
-        expect(screen.getByTestId("run-action-slot")).toBeInTheDocument();
-      });
+    // Check that runAction slot is rendered
+    await waitFor(() => {
+      expect(screen.getByTestId("run-action-slot")).toBeInTheDocument();
+    });
 
-      // Check that renderRunAction was called with the definition node
-      expect(renderRunAction).toHaveBeenCalled();
-    }
+    // Check that renderRunAction was called with the definition node
+    expect(renderRunAction).toHaveBeenCalled();
   });
 
   it("opens definition drawer when graph node is clicked", async () => {
@@ -426,6 +423,48 @@ describe("TopologyView", () => {
     expect(screen.getByText("View deployed version")).toBeInTheDocument();
   });
 
+  it("navigates using workflow name (node.label), not CR name (node.name)", async () => {
+    const navigate = vi.fn();
+    const gateway = createMockGateway();
+    const user = userEvent.setup();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TopologyView
+          namespace="default"
+          gateway={gateway}
+          navigation={{ ...mockNavigation, navigate }}
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("topology-canvas")).toBeInTheDocument();
+    });
+
+    // Click on a definition node in the graph
+    // Fixture: node.name="hello-world-v-1-0-0" (CR name), node.label="hello-world" (workflow name)
+    const definitionNodeButton = screen.getByTestId("node-button-definition/default/hello-world/1.0.0");
+    expect(definitionNodeButton).toBeTruthy();
+    await user.click(definitionNodeButton);
+
+    // Drawer should open
+    await waitFor(() => {
+      expect(screen.getByText("Definition Details")).toBeInTheDocument();
+    });
+
+    // Click "View deployed version" button
+    const viewButton = screen.getByText("View deployed version");
+    await user.click(viewButton);
+
+    // Should navigate using workflow name ("hello-world" from node.label), NOT CR name ("hello-world-v-1-0-0" from node.name)
+    await waitFor(() => {
+      expect(navigate).toHaveBeenCalledWith(
+        "/workflows/default/hello-world/1.0.0"
+      );
+    });
+  });
+
   it("maintains selection when drawer opens and closes", async () => {
     const gateway = createMockGateway();
     const user = userEvent.setup();
@@ -445,35 +484,34 @@ describe("TopologyView", () => {
 
     // Click on a definition row
     const rows = screen.getAllByRole("row");
-    const definitionRow = rows.find((r) => within(r).queryByText("hello-world 1.0.0"));
+    const definitionRow = rows.find((r) => within(r).queryByText("hello-world"));
 
-    if (definitionRow) {
-      await user.click(definitionRow);
+    expect(definitionRow).toBeTruthy();
+    await user.click(definitionRow!);
 
-      // Drawer should open with definition details
-      await waitFor(() => {
-        expect(screen.getByText("Definition Details")).toBeInTheDocument();
-      });
+    // Drawer should open with definition details
+    await waitFor(() => {
+      expect(screen.getByText("Definition Details")).toBeInTheDocument();
+    });
 
-      // Verify the drawer content is visible (confirms selection is active)
-      expect(screen.getByText("View deployed version")).toBeInTheDocument();
+    // Verify the drawer content is visible (confirms selection is active)
+    expect(screen.getByText("View deployed version")).toBeInTheDocument();
 
-      // Test selection persistence: switch back to graph view
-      const showGraphButton = screen.getByText("Show graph");
-      await user.click(showGraphButton);
+    // Test selection persistence: switch back to graph view
+    const showGraphButton = screen.getByText("Show graph");
+    await user.click(showGraphButton);
 
-      // Drawer should still be visible (selection persists across view switch)
-      await waitFor(() => {
-        expect(screen.getByText("Definition Details")).toBeInTheDocument();
-      });
+    // Drawer should still be visible (selection persists across view switch)
+    await waitFor(() => {
+      expect(screen.getByText("Definition Details")).toBeInTheDocument();
+    });
 
-      // Switch back to list view and verify drawer is still showing
-      const showListButton = screen.getByText("Show list");
-      await user.click(showListButton);
+    // Switch back to list view and verify drawer is still showing
+    const showListButton = screen.getByText("Show list");
+    await user.click(showListButton);
 
-      await waitFor(() => {
-        expect(screen.getByText("Definition Details")).toBeInTheDocument();
-      });
-    }
+    await waitFor(() => {
+      expect(screen.getByText("Definition Details")).toBeInTheDocument();
+    });
   });
 });
