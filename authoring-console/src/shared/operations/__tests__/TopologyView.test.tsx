@@ -10,8 +10,29 @@ import type { GatewayTransport } from "../../../contracts/index.ts";
 import { topologyFullFixture, topologyPartialFixture } from "../../../fixtures/topology.ts";
 import { TopologyView } from "../TopologyView.tsx";
 
+// Mock theme
+vi.mock("../../app/theme.tsx", () => ({
+  useTheme: () => ({ theme: "light", toggleTheme: vi.fn() }),
+}));
+
+// Mock TopologyCanvas to avoid nested useTheme calls
+vi.mock("../../../editors/TopologyCanvas.tsx", () => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  TopologyCanvas: ({ graph }: { graph: any }) => (
+    <div data-testid="topology-canvas">
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+      {graph?.nodes?.map((n: any) => (
+        <div key={n.id} data-node-id={n.id}>
+          {n.label}
+        </div>
+      ))}
+    </div>
+  ),
+}));
+
 // Mock React Flow and Monaco
 vi.mock("@xyflow/react", () => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ReactFlow: ({ nodes }: { nodes: any[] }) => (
     <div data-testid="react-flow">
       {nodes.map((n) => (
@@ -26,6 +47,7 @@ vi.mock("@xyflow/react", () => ({
 }));
 
 const createMockGateway = (overrides?: Partial<GatewayTransport>): GatewayTransport => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const base: any = {
     getTopology: vi.fn().mockResolvedValue(topologyFullFixture),
     listDefinitions: vi.fn(),
@@ -37,6 +59,7 @@ const createMockGateway = (overrides?: Partial<GatewayTransport>): GatewayTransp
     suspendInstance: vi.fn(),
     resumeInstance: vi.fn(),
     cancelInstance: vi.fn(),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ...(overrides as any),
   };
 
@@ -84,7 +107,7 @@ describe("TopologyView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId("react-flow")).toBeInTheDocument();
+      expect(screen.getByTestId("topology-canvas")).toBeInTheDocument();
     });
 
     // Check that nodes are rendered
@@ -103,7 +126,7 @@ describe("TopologyView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Show list")).toBeInTheDocument();
+      expect(screen.getByTestId("topology-canvas")).toBeInTheDocument();
     });
 
     const toggleButton = screen.getByText("Show list");
@@ -112,11 +135,11 @@ describe("TopologyView", () => {
     // List view should show nodes in a table
     await waitFor(() => {
       expect(screen.getByText("Show graph")).toBeInTheDocument();
-      expect(screen.getByRole("table")).toBeInTheDocument();
+      expect(screen.getByLabelText("Topology nodes")).toBeInTheDocument();
     });
 
     // Verify table contents
-    const table = screen.getByRole("table");
+    const table = screen.getByLabelText("Topology nodes");
     expect(within(table).getByText("Platform")).toBeInTheDocument();
     expect(within(table).getByText("hello-runtime")).toBeInTheDocument();
   });
@@ -184,11 +207,10 @@ describe("TopologyView", () => {
       </QueryClientProvider>,
     );
 
-    await waitFor(() => {
-      expect(screen.getByText("Gateway unreachable")).toBeInTheDocument();
-    });
-
-    expect(screen.getByText("Kubernetes actions remain available")).toBeInTheDocument();
+    // Check that error message appears
+    expect(await screen.findByText("Gateway unreachable")).toBeInTheDocument();
+    expect(screen.getByText(/Kubernetes actions remain available/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
   it("handles upstream error state (502)", async () => {

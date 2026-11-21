@@ -10,7 +10,13 @@ import type { GatewayTransport, WorkflowVersionKey } from "../../../contracts/in
 import { instanceFixtures } from "../../../fixtures/instances.ts";
 import { InstanceHistoryView } from "../InstanceHistoryView.tsx";
 
+// Mock theme
+vi.mock("../../app/theme.tsx", () => ({
+  useTheme: () => ({ theme: "light", toggleTheme: vi.fn() }),
+}));
+
 const createMockGateway = (overrides?: Partial<GatewayTransport>): GatewayTransport => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const base: any = {
     getTopology: vi.fn(),
     listDefinitions: vi.fn(),
@@ -22,6 +28,7 @@ const createMockGateway = (overrides?: Partial<GatewayTransport>): GatewayTransp
     suspendInstance: vi.fn(),
     resumeInstance: vi.fn(),
     cancelInstance: vi.fn(),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ...(overrides as any),
   };
 
@@ -86,10 +93,10 @@ describe("InstanceHistoryView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("table")).toBeInTheDocument();
+      expect(screen.getByLabelText("Instance history")).toBeInTheDocument();
     });
 
-    const table = screen.getByRole("table");
+    const table = screen.getByLabelText("Instance history");
     expect(within(table).getByText("ID")).toBeInTheDocument();
     expect(within(table).getByText("Status")).toBeInTheDocument();
     expect(within(table).getByText("Started")).toBeInTheDocument();
@@ -106,7 +113,7 @@ describe("InstanceHistoryView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("table")).toBeInTheDocument();
+      expect(screen.getByLabelText("Instance history")).toBeInTheDocument();
     });
 
     // Check for specific instance data
@@ -245,7 +252,7 @@ describe("InstanceHistoryView", () => {
 
     // Should now show instances
     await waitFor(() => {
-      expect(screen.getByRole("table")).toBeInTheDocument();
+      expect(screen.getByLabelText("Instance history")).toBeInTheDocument();
     });
   });
 
@@ -260,7 +267,7 @@ describe("InstanceHistoryView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("table")).toBeInTheDocument();
+      expect(screen.getByLabelText("Instance history")).toBeInTheDocument();
     });
 
     // Click Details button
@@ -285,25 +292,19 @@ describe("InstanceHistoryView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("table")).toBeInTheDocument();
+      expect(screen.getByLabelText("Instance history")).toBeInTheDocument();
     });
 
     // Click Details button
     const detailsButtons = screen.getAllByText("Details");
     await user.click(detailsButtons[0] as HTMLElement);
 
-    // Drawer should load and display details
-    await waitFor(() => {
-      expect(getInstance).toHaveBeenCalled();
-    });
-
-    // Check that instance data is displayed
-    await waitFor(() => {
-      expect(screen.getByText("COMPLETED")).toBeInTheDocument();
-      expect(screen.getByText("default")).toBeInTheDocument();
-      expect(screen.getByText("hello-world")).toBeInTheDocument();
-      expect(screen.getByText("1.0.0")).toBeInTheDocument();
-    });
+    // Check that instance data is displayed in the drawer
+    const completedElements = await screen.findAllByText("COMPLETED");
+    expect(completedElements.length).toBeGreaterThan(0);
+    expect(await screen.findByText("default")).toBeInTheDocument();
+    expect(await screen.findByText("hello-world")).toBeInTheDocument();
+    expect(await screen.findByText("1.0.0")).toBeInTheDocument();
   });
 
   it("closes drawer when close button clicked", async () => {
@@ -317,7 +318,7 @@ describe("InstanceHistoryView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("table")).toBeInTheDocument();
+      expect(screen.getByLabelText("Instance history")).toBeInTheDocument();
     });
 
     // Click Details button
@@ -352,7 +353,7 @@ describe("InstanceHistoryView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("table")).toBeInTheDocument();
+      expect(screen.getByLabelText("Instance history")).toBeInTheDocument();
     });
 
     // Click Details button

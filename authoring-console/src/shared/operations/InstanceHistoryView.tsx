@@ -161,6 +161,7 @@ export const InstanceHistoryView = ({ versionKey, gateway }: InstanceHistoryView
 
 interface InstanceDetailDrawerProps {
   readonly instanceId: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly detailQuery: UseQueryResult<any, Error>;
   readonly onClose: () => void;
 }
@@ -189,29 +190,38 @@ const InstanceDetailDrawer = ({ instanceId, detailQuery, onClose }: InstanceDeta
               <Tbody>
                 <Tr>
                   <Td dataLabel="ID">
-                    <code style={{ wordBreak: "break-all" }}>{(detailQuery.data as any).id}</code>
+                    <code style={{ wordBreak: "break-all" }}>{// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(detailQuery.data as any).id}</code>
                   </Td>
                 </Tr>
                 <Tr>
-                  <Td dataLabel="Status">{(detailQuery.data as any).status}</Td>
+                  <Td dataLabel="Status">{// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(detailQuery.data as any).status}</Td>
                 </Tr>
                 <Tr>
-                  <Td dataLabel="Namespace">{(detailQuery.data as any).namespace}</Td>
+                  <Td dataLabel="Namespace">{// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(detailQuery.data as any).namespace}</Td>
                 </Tr>
                 <Tr>
-                  <Td dataLabel="Workflow">{(detailQuery.data as any).name}</Td>
+                  <Td dataLabel="Workflow">{// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(detailQuery.data as any).name}</Td>
                 </Tr>
                 <Tr>
-                  <Td dataLabel="Version">{(detailQuery.data as any).version}</Td>
+                  <Td dataLabel="Version">{// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(detailQuery.data as any).version}</Td>
                 </Tr>
-                {(detailQuery.data as any).startedAt && (
+                {// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(detailQuery.data as any).startedAt && (
                   <Tr>
-                    <Td dataLabel="Started">{(detailQuery.data as any).startedAt}</Td>
+                    <Td dataLabel="Started">{// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(detailQuery.data as any).startedAt}</Td>
                   </Tr>
                 )}
-                {(detailQuery.data as any).endedAt && (
+                {// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(detailQuery.data as any).endedAt && (
                   <Tr>
-                    <Td dataLabel="Ended">{(detailQuery.data as any).endedAt}</Td>
+                    <Td dataLabel="Ended">{// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(detailQuery.data as any).endedAt}</Td>
                   </Tr>
                 )}
               </Tbody>
@@ -235,6 +245,7 @@ const InstanceHistoryErrorState = ({ error, onRetry, retrying }: InstanceHistory
   }
 
   // Type guard to check if it's a GatewayError
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const isGatewayError = (err: unknown): err is any => {
     return !!(err && typeof err === "object" && "kind" in err);
   };

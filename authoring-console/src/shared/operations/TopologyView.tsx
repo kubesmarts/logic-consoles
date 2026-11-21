@@ -285,6 +285,7 @@ const TopologyErrorState = ({ error, onRetry, retrying }: TopologyErrorStateProp
   }
 
   // Type guard to check if it's a GatewayError
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const isGatewayError = (err: unknown): err is any => {
     return !!(err && typeof err === "object" && "kind" in err);
   };
