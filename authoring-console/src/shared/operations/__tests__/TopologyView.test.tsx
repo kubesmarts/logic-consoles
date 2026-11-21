@@ -16,15 +16,21 @@ vi.mock("../../app/theme.tsx", () => ({
 }));
 
 // Mock TopologyCanvas to avoid nested useTheme calls
+// The mock must accept and call onNodeSelect callback to test graph selection
 vi.mock("../../../editors/TopologyCanvas.tsx", () => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TopologyCanvas: ({ graph }: { graph: any }) => (
+  TopologyCanvas: ({ graph, onNodeSelect }: { graph: any; onNodeSelect?: any }) => (
     <div data-testid="topology-canvas">
       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
       {graph?.nodes?.map((n: any) => (
-        <div key={n.id} data-node-id={n.id}>
+        <button
+          key={n.id}
+          data-node-id={n.id}
+          data-testid={`node-button-${n.id}`}
+          onClick={() => onNodeSelect?.(n.id)}
+        >
           {n.label}
-        </div>
+        </button>
       ))}
     </div>
   ),
@@ -393,6 +399,7 @@ describe("TopologyView", () => {
 
   it("opens definition drawer when graph node is clicked", async () => {
     const gateway = createMockGateway();
+    const user = userEvent.setup();
 
     render(
       <QueryClientProvider client={queryClient}>
@@ -400,17 +407,23 @@ describe("TopologyView", () => {
       </QueryClientProvider>,
     );
 
-    // Wait for topology to load and display
+    // Wait for topology graph to load and display
     await waitFor(() => {
       expect(screen.getByTestId("topology-canvas")).toBeInTheDocument();
     });
 
-    // The graph view is active by default. Click on a topology node.
-    // We'll simulate clicking via the onNodeSelect callback by clicking on the ReactFlow canvas
-    // Note: The TopologyCanvas mock would call onNodeSelect on node click.
-    // Since we're testing real TopologyCanvas now, we need to update the mock strategy.
-    // For now, verify the graph is visible and can be interacted with.
-    expect(screen.getByTestId("topology-canvas")).toBeInTheDocument();
+    // Click on a definition node in the graph (hello-world 1.0.0)
+    // The mock TopologyCanvas calls onNodeSelect with the node id on button click
+    const definitionNodeButton = screen.getByTestId("node-button-definition/default/hello-world/1.0.0");
+    await user.click(definitionNodeButton);
+
+    // Drawer should open with definition details
+    await waitFor(() => {
+      expect(screen.getByText("Definition Details")).toBeInTheDocument();
+    });
+
+    // Verify the drawer shows version link
+    expect(screen.getByText("View deployed version")).toBeInTheDocument();
   });
 
   it("maintains selection when drawer opens and closes", async () => {
@@ -442,10 +455,25 @@ describe("TopologyView", () => {
         expect(screen.getByText("Definition Details")).toBeInTheDocument();
       });
 
-      // Note: Close drawer functionality would be tested here by clicking close button
-      // and verifying selection persists. This test verifies the selection mechanism
-      // works correctly for the definition drawer.
+      // Verify the drawer content is visible (confirms selection is active)
       expect(screen.getByText("View deployed version")).toBeInTheDocument();
+
+      // Test selection persistence: switch back to graph view
+      const showGraphButton = screen.getByText("Show graph");
+      await user.click(showGraphButton);
+
+      // Drawer should still be visible (selection persists across view switch)
+      await waitFor(() => {
+        expect(screen.getByText("Definition Details")).toBeInTheDocument();
+      });
+
+      // Switch back to list view and verify drawer is still showing
+      const showListButton = screen.getByText("Show list");
+      await user.click(showListButton);
+
+      await waitFor(() => {
+        expect(screen.getByText("Definition Details")).toBeInTheDocument();
+      });
     }
   });
 });
