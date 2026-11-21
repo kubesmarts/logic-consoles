@@ -38,6 +38,11 @@ export interface TopologyViewProps {
   readonly namespace: string;
   readonly gateway: GatewayTransport;
   readonly navigation: NavigationPort;
+  /**
+   * Optional Run action slot for Packet G. When provided, renders the Run UI
+   * in the definition drawer, exposing the selected deployed version and its links.
+   */
+  readonly renderRunAction?: (version: TopologyNode) => ReactNode;
 }
 
 interface TopologyViewState {
@@ -46,7 +51,7 @@ interface TopologyViewState {
   readonly retrying: boolean;
 }
 
-export const TopologyView = ({ namespace, gateway, navigation }: TopologyViewProps): ReactNode => {
+export const TopologyView = ({ namespace, gateway, navigation, renderRunAction }: TopologyViewProps): ReactNode => {
   const [viewState, setViewState] = useState<TopologyViewState>({
     selectedNodeId: null,
     showList: false,
@@ -137,7 +142,7 @@ export const TopologyView = ({ namespace, gateway, navigation }: TopologyViewPro
               onExpand={() => {}}
               position="right"
             >
-              <DrawerContent panelContent={<DefinitionDrawer node={selectedNode} onClose={handleDrawerClose} navigation={navigation} />}>
+              <DrawerContent panelContent={<DefinitionDrawer node={selectedNode} onClose={handleDrawerClose} navigation={navigation} renderRunAction={renderRunAction} />}>
                 <DrawerContentBody>{/* Main content goes here */}</DrawerContentBody>
               </DrawerContent>
             </Drawer>
@@ -212,9 +217,10 @@ interface DefinitionDrawerProps {
   readonly node: TopologyNode;
   readonly onClose: () => void;
   readonly navigation: NavigationPort;
+  readonly renderRunAction?: (version: TopologyNode) => ReactNode;
 }
 
-const DefinitionDrawer = ({ node, onClose, navigation }: DefinitionDrawerProps): ReactNode => {
+const DefinitionDrawer = ({ node, onClose, navigation, renderRunAction }: DefinitionDrawerProps): ReactNode => {
   if (node.kind !== "LogicFlowDefinition" || !node.namespace || !node.details) {
     return (
       <DrawerPanelContent isResizable>
@@ -267,6 +273,11 @@ const DefinitionDrawer = ({ node, onClose, navigation }: DefinitionDrawerProps):
           <Button onClick={handleViewVersion} variant="primary" style={{ marginTop: "1.5rem" }}>
             View deployed version
           </Button>
+          {renderRunAction && (
+            <div style={{ marginTop: "1rem" }}>
+              {renderRunAction(node)}
+            </div>
+          )}
         </div>
       </DrawerContentBody>
     </DrawerPanelContent>

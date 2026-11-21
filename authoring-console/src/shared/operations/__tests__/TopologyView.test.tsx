@@ -350,4 +350,44 @@ describe("TopologyView", () => {
       });
     }
   });
+
+  it("renders runAction slot when provided in definition drawer", async () => {
+    const gateway = createMockGateway();
+    const renderRunAction = vi.fn(() => <div data-testid="run-action-slot">Run Workflow</div>);
+    const user = userEvent.setup();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TopologyView
+          namespace="default"
+          gateway={gateway}
+          navigation={mockNavigation}
+          renderRunAction={renderRunAction}
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("topology-canvas")).toBeInTheDocument();
+    });
+
+    // Switch to list view
+    await user.click(screen.getByText("Show list"));
+
+    // Click on a definition row
+    const rows = screen.getAllByRole("row");
+    const definitionRow = rows.find((r) => within(r).queryByText("hello-world 1.0.0"));
+
+    if (definitionRow) {
+      await user.click(definitionRow);
+
+      // Check that runAction slot is rendered
+      await waitFor(() => {
+        expect(screen.getByTestId("run-action-slot")).toBeInTheDocument();
+      });
+
+      // Check that renderRunAction was called with the definition node
+      expect(renderRunAction).toHaveBeenCalled();
+    }
+  });
 });
