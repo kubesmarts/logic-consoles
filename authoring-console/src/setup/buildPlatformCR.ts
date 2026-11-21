@@ -41,13 +41,40 @@ export interface ClusterLogicPlatformCRSpec {
   readonly [extra: string]: unknown;
 }
 
+export interface DataIndexStatus {
+  readonly ready: boolean;
+  readonly service?: unknown;
+  readonly persistence?: unknown;
+}
+
+export interface VectorStatus {
+  readonly ready: boolean;
+  readonly daemonSetRef?: { readonly name: string };
+  readonly metricsEndpoint?: string;
+}
+
+export interface WorkflowGatewayStatus {
+  readonly ready: boolean;
+  readonly deploymentRef?: { readonly name: string };
+  readonly serviceRef?: { readonly name: string };
+  readonly ingressRef?: { readonly name: string };
+  readonly routeRef?: { readonly name: string };
+  readonly url?: string;
+}
+
 export interface ClusterLogicPlatformCRStatus {
   readonly phase?: "Pending" | "Ready" | "Failed";
   readonly observedGeneration?: number;
-  readonly dataIndex?: unknown;
-  readonly vector?: unknown;
-  readonly gateway?: unknown;
-  readonly conditions?: unknown[];
+  readonly dataIndex?: DataIndexStatus;
+  readonly vector?: VectorStatus;
+  readonly gateway?: WorkflowGatewayStatus;
+  readonly conditions?: Array<{
+    readonly type: string;
+    readonly status: string;
+    readonly reason?: string;
+    readonly message?: string;
+    readonly lastTransitionTime?: string;
+  }>;
   readonly [extra: string]: unknown;
 }
 

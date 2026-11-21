@@ -12,9 +12,10 @@
  */
 import { type ReactNode, useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Wizard, WizardStep, EmptyState, EmptyStateBody, Bullseye, Spinner } from "@patternfly/react-core";
+import { Wizard, WizardStep, EmptyState, EmptyStateBody, Bullseye, Spinner, Button } from "@patternfly/react-core";
 import { useConsole } from "../app/ConsoleContext.tsx";
-import { LOGIC_GROUP, LOGIC_VERSION, LogicKinds, type ClusterLogicPlatformSpec } from "../contracts/index.ts";
+import { LOGIC_GROUP, LOGIC_VERSION, LogicKinds, type ClusterLogicPlatformSpec, type KubeObject } from "../contracts/index.ts";
+import type { ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus } from "./buildPlatformCR.ts";
 import type { PlatformSetupDraft } from "./types.ts";
 import { TargetNamespaceStep } from "./steps/TargetNamespaceStep.tsx";
 import { ExecutionModeStep } from "./steps/ExecutionModeStep.tsx";
@@ -26,9 +27,10 @@ import { ReviewStep } from "./steps/ReviewStep.tsx";
 interface PlatformSetupWizardProps {
   readonly onComplete?: () => void;
   readonly onCancel?: () => void;
+  readonly editMode?: boolean;
 }
 
-export const PlatformSetupWizard = ({ onComplete, onCancel }: PlatformSetupWizardProps): ReactNode => {
+export const PlatformSetupWizard = ({ onComplete, onCancel, editMode = false }: PlatformSetupWizardProps): ReactNode => {
   const { session, kubernetes, capabilities } = useConsole();
 
   // Discover existing platform
@@ -76,14 +78,46 @@ export const PlatformSetupWizard = ({ onComplete, onCancel }: PlatformSetupWizar
       ),
   });
 
+  // Initialize draft from existing platform in edit mode
+  const initializeDraft = (): PlatformSetupDraft => {
+    if (editMode && discoveryQuery.data && discoveryQuery.data.spec) {
+      const spec = discoveryQuery.data.spec as ClusterLogicPlatformCRSpec;
+      return {
+        targetNamespace: spec.targetNamespace || "",
+        executionMode: spec.dataIndex ? "history-enabled" : "quick-run",
+        gatewayIngress: {
+          enabled: spec.gateway?.ingress?.enabled ?? false,
+          host: spec.gateway?.ingress?.host,
+          ingressClassName: spec.gateway?.ingress?.ingressClassName,
+        },
+        dataIndex: spec.dataIndex?.persistence?.postgresql
+          ? {
+              postgresqlSecretName: spec.dataIndex.persistence.postgresql.secretRef.name,
+              postgresqlServiceName: spec.dataIndex.persistence.postgresql.serviceRef.name,
+              postgresqlServiceNamespace: spec.dataIndex.persistence.postgresql.serviceRef.namespace,
+              databaseName: spec.dataIndex.persistence.postgresql.serviceRef.databaseName,
+              databaseSchema: spec.dataIndex.persistence.postgresql.serviceRef.databaseSchema,
+            }
+          : undefined,
+        vector: spec.vector
+          ? {
+              watchNamespaces: spec.vector.watchNamespaces as string[] | undefined,
+              debugEvents: spec.vector.debugEvents,
+            }
+          : undefined,
+      };
+    }
+    return {
+      targetNamespace: "",
+      executionMode: "history-enabled",
+      gatewayIngress: {
+        enabled: true,
+      },
+    };
+  };
+
   // Wizard state
-  const [draft, setDraft] = useState<PlatformSetupDraft>({
-    targetNamespace: "",
-    executionMode: "history-enabled",
-    gatewayIngress: {
-      enabled: true,
-    },
-  });
+  const [draft, setDraft] = useState<PlatformSetupDraft>(initializeDraft());
 
   const [currentStep, setCurrentStep] = useState(0);
 
@@ -115,32 +149,48 @@ export const PlatformSetupWizard = ({ onComplete, onCancel }: PlatformSetupWizar
   const platformExists = discoveryQuery.data !== null && discoveryQuery.data !== undefined;
   const platformCanEdit = canEditPlatformQuery.data?.decision === "allowed";
   const canCreateNamespace = canCreateNamespaceQuery.data?.decision === "allowed";
+  const existingPlatform = platformExists
+    ? (discoveryQuery.data as unknown as KubeObject<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus>)
+    : null;
 
-  // If platform exists and is editable, show view/edit options (TODO: implement edit path)
-  // If platform exists and is read-only, show continue option (TODO: implement)
-  // If platform discovery is forbidden, show 403 state with available options
-  // If platform is absent, show setup wizard
-
-  if (platformExists && platformCanEdit) {
+  // If platform exists and is editable but not in edit mode, show option to edit
+  if (platformExists && platformCanEdit && !editMode) {
     return (
       <EmptyState titleText="Platform already configured" headingLevel="h1">
-        <EmptyStateBody>A ClusterLogicPlatform is already deployed. Edit functionality is coming soon.</EmptyStateBody>
+        <EmptyStateBody>
+          <p>A ClusterLogicPlatform is already deployed.</p>
+          <p style={{ marginTop: "1rem" }}>
+            <strong>Target namespace:</strong> {(existingPlatform?.spec as ClusterLogicPlatformSpec)?.targetNamespace}
+          </p>
+        </EmptyStateBody>
+        <Button variant="primary" onClick={() => window.location.reload()}>
+          View platform
+        </Button>
       </EmptyState>
     );
   }
 
+  // If platform exists and is read-only, show continue option
   if (platformExists && !platformCanEdit) {
     return (
       <EmptyState titleText="Platform configured (read-only)" headingLevel="h1">
         <EmptyStateBody>You can view the platform but cannot edit it. Continue to workflows.</EmptyStateBody>
+        <Button variant="primary" onClick={onComplete}>
+          Continue to workflows
+        </Button>
       </EmptyState>
     );
   }
 
-  // Setup wizard for absent or discovery-forbidden platform
+  // Setup wizard for absent or discovery-forbidden platform, or edit mode
   const steps = [
     <WizardStep name="Target namespace" id="target-namespace" key="target-namespace">
-      <TargetNamespaceStep draft={draft} onUpdate={handleDraftUpdate} canCreateNamespace={canCreateNamespace} />
+      <TargetNamespaceStep
+        draft={draft}
+        onUpdate={handleDraftUpdate}
+        canCreateNamespace={canCreateNamespace}
+        editMode={editMode}
+      />
     </WizardStep>,
     <WizardStep name="Execution mode" id="execution-mode" key="execution-mode">
       <ExecutionModeStep draft={draft} onUpdate={handleDraftUpdate} />
@@ -159,13 +209,19 @@ export const PlatformSetupWizard = ({ onComplete, onCancel }: PlatformSetupWizar
       <GatewayStep draft={draft} onUpdate={handleDraftUpdate} />
     </WizardStep>,
     <WizardStep name="Review" id="review" key="review">
-      <ReviewStep draft={draft} onComplete={onComplete} onCancel={onCancel} />
+      <ReviewStep
+        draft={draft}
+        onComplete={onComplete}
+        onCancel={onCancel}
+        editMode={editMode}
+        existingPlatform={existingPlatform}
+      />
     </WizardStep>,
   ];
 
   return (
     <Wizard
-      title="Set up platform"
+      title={editMode ? "Edit platform configuration" : "Set up platform"}
       steps={steps as any}
       startAtStep={currentStep}
       onStepChange={((_event: unknown, newStep: any) => {

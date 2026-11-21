@@ -13,7 +13,7 @@ interface ExecutionModeStepProps {
 }
 
 export const ExecutionModeStep = ({ draft, onUpdate }: ExecutionModeStepProps): ReactNode => (
-  <Form>
+  <Form style={{ maxWidth: "600px" }}>
     <FormGroup label="Choose execution mode" fieldId="execution-mode" isRequired>
       <div style={{ marginBottom: "1.5rem" }}>
         <Radio

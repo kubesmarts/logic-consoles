@@ -15,7 +15,6 @@ import {
   ModalVariant,
   ModalBody,
   ModalHeader,
-  ModalFooter,
   Tabs,
   Tab,
   TabTitleText,
@@ -23,22 +22,26 @@ import {
   HelperText,
   HelperTextItem,
   AlertVariant,
+  CodeBlock,
+  CodeBlockCode,
 } from "@patternfly/react-core";
 import { ExclamationTriangleIcon } from "@patternfly/react-icons";
 import { useConsole } from "../../app/ConsoleContext.tsx";
-import { useResourceEditor } from "../../resource-editor/index.ts";
+import { ResourceEditor } from "../../resource-editor/ResourceEditor.tsx";
 import type { PlatformSetupDraft } from "../types.ts";
 
 interface TargetNamespaceStepProps {
   readonly draft: PlatformSetupDraft;
   readonly onUpdate: (updates: Partial<PlatformSetupDraft>) => void;
   readonly canCreateNamespace: boolean;
+  readonly editMode?: boolean;
 }
 
 export const TargetNamespaceStep = ({
   draft,
   onUpdate,
   canCreateNamespace,
+  editMode = false,
 }: TargetNamespaceStepProps): ReactNode => {
   const { kubernetes } = useConsole();
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -77,38 +80,64 @@ export const TargetNamespaceStep = ({
     },
   };
 
-  const resourceEditor = useResourceEditor({
-    transport: kubernetes,
-    ref: {
-      gvk: { group: "", version: "v1", kind: "Namespace" },
-      name: newNamespaceName,
-      namespace: "",
-    },
-    seed: namespaceTemplate,
-    verb: "create",
-  });
-
-  const handleCreateNamespace = async (): Promise<void> => {
-    if (!newNamespaceName.trim()) {
-      setCreateError("Namespace name is required");
-      return;
-    }
+  const handleNamespaceCreated = (created: { metadata: { name?: string } }): void => {
+    const createdName = created.metadata.name || newNamespaceName;
+    onUpdate({ targetNamespace: createdName });
+    setShowCreateModal(false);
+    setNewNamespaceName("");
     setCreateError(null);
-    try {
-      await resourceEditor.dryRun();
-      onUpdate({ targetNamespace: newNamespaceName });
-      setShowCreateModal(false);
-      setNewNamespaceName("");
-    } catch (err) {
+    // Refetch the namespace list
+    void namespacesQuery.refetch();
+  };
+
+  const handleNamespaceCreateError = (err: unknown): void => {
+    // Check if it's a forbidden error
+    if (err && typeof err === "object" && "statusCode" in err && err.statusCode === 403) {
+      setCreateError("forbidden");
+    } else if (err && typeof err === "object" && "statusCode" in err && err.statusCode === 409) {
+      // Namespace already exists - check if we can get it
+      void kubernetes.get({ gvk: { group: "", version: "v1", kind: "Namespace" }, name: newNamespaceName, namespace: "" })
+        .then(() => {
+          // It exists and we can read it - offer to select it
+          setCreateError("exists");
+        })
+        .catch(() => {
+          // Exists but we can't read it
+          setCreateError("exists-unknown");
+        });
+    } else {
       setCreateError(err instanceof Error ? err.message : "Failed to create namespace");
     }
   };
 
+  const handleSelectExisting = (): void => {
+    onUpdate({ targetNamespace: newNamespaceName });
+    setShowCreateModal(false);
+    setNewNamespaceName("");
+    setCreateError(null);
+  };
+
   return (
-    <Form>
+    <Form style={{ maxWidth: "600px" }}>
       <div style={{ marginBottom: "1.5rem" }}>
         <FormGroup label="Select namespace" isRequired fieldId="namespace-select">
-          {canCreateNamespace && (
+          {editMode && (
+            <>
+              <TextInput
+                value={draft.targetNamespace}
+                readOnly
+                id="namespace-input-readonly"
+              />
+              <FormHelperText>
+                <HelperText>
+                  <HelperTextItem variant="warning" icon={<ExclamationTriangleIcon />}>
+                    The target namespace is immutable after platform creation. To change it, delete the platform and create a new one.
+                  </HelperTextItem>
+                </HelperText>
+              </FormHelperText>
+            </>
+          )}
+          {!editMode && canCreateNamespace && (
             <div style={{ marginBottom: "1rem" }}>
               <Tabs activeKey={0}>
                 <Tab eventKey={0} title={<TabTitleText>Select existing</TabTitleText>}>
@@ -149,7 +178,7 @@ export const TargetNamespaceStep = ({
               </Tabs>
             </div>
           )}
-          {!canCreateNamespace && (
+          {!editMode && !canCreateNamespace && (
             <>
               <TextInput
                 value={draft.targetNamespace}
@@ -178,41 +207,92 @@ export const TargetNamespaceStep = ({
       <Modal
         title="Create namespace"
         isOpen={showCreateModal}
-        variant={ModalVariant.medium}
-        onClose={() => setShowCreateModal(false)}
+        variant={ModalVariant.large}
+        onClose={() => {
+          setShowCreateModal(false);
+          setCreateError(null);
+        }}
       >
         <ModalHeader title="Create namespace" />
         <ModalBody>
-          <Form>
-            <FormGroup label="Namespace name" isRequired fieldId="new-ns-name">
-              <TextInput
-                value={newNamespaceName}
-                onChange={(_event, value) => {
-                  setNewNamespaceName(value);
+          <FormGroup label="Namespace name" isRequired fieldId="new-ns-name">
+            <TextInput
+              value={newNamespaceName}
+              onChange={(_event, value) => {
+                setNewNamespaceName(value);
+                setCreateError(null);
+              }}
+              placeholder="e.g. logic-platform"
+              id="new-ns-name"
+            />
+          </FormGroup>
+
+          {createError === "forbidden" && (
+            <>
+              <Alert isInline variant={AlertVariant.warning} title="Cannot create namespace">
+                You don&apos;t have permission to create namespaces. Ask a cluster administrator to create it:
+              </Alert>
+              <CodeBlock style={{ marginTop: "1rem" }}>
+                <CodeBlockCode>kubectl create namespace {newNamespaceName}</CodeBlockCode>
+              </CodeBlock>
+              <Button
+                variant="primary"
+                onClick={() => {
                   setCreateError(null);
+                  void namespacesQuery.refetch();
                 }}
-                placeholder="e.g. logic-platform"
-                id="new-ns-name"
+                style={{ marginTop: "1rem" }}
+              >
+                Check again
+              </Button>
+            </>
+          )}
+
+          {createError === "exists" && (
+            <>
+              <Alert isInline variant={AlertVariant.info} title="Namespace already exists">
+                The namespace &quot;{newNamespaceName}&quot; already exists. Would you like to select it?
+              </Alert>
+              <Button variant="primary" onClick={handleSelectExisting} style={{ marginTop: "1rem" }}>
+                Select existing namespace
+              </Button>
+            </>
+          )}
+
+          {createError === "exists-unknown" && (
+            <>
+              <Alert isInline variant={AlertVariant.info} title="Namespace may already exist">
+                The namespace &quot;{newNamespaceName}&quot; could not be created (conflict), but we cannot read it to verify. You can still select it by name.
+              </Alert>
+              <Button variant="primary" onClick={handleSelectExisting} style={{ marginTop: "1rem" }}>
+                Select this name anyway
+              </Button>
+            </>
+          )}
+
+          {!createError && newNamespaceName.trim() && (
+            <div style={{ marginTop: "1.5rem" }}>
+              <ResourceEditor
+                transport={kubernetes}
+                ref={{
+                  gvk: { group: "", version: "v1", kind: "Namespace" },
+                  name: newNamespaceName,
+                  namespace: "",
+                }}
+                seed={namespaceTemplate}
+                verb="create"
+                onWriteSuccess={handleNamespaceCreated}
+                onWriteError={handleNamespaceCreateError}
               />
-            </FormGroup>
-            {createError && (
-              <Alert isInline variant={AlertVariant.danger} title={createError} />
-            )}
-          </Form>
+            </div>
+          )}
+
+          {typeof createError === "string" && createError !== "forbidden" && createError !== "exists" && createError !== "exists-unknown" && (
+            <Alert isInline variant={AlertVariant.danger} title="Error">
+              {createError}
+            </Alert>
+          )}
         </ModalBody>
-        <ModalFooter>
-          <Button key="cancel" variant="secondary" onClick={() => setShowCreateModal(false)}>
-            Cancel
-          </Button>
-          <Button
-            key="create"
-            variant="primary"
-            onClick={handleCreateNamespace}
-            isDisabled={!newNamespaceName.trim()}
-          >
-            Create
-          </Button>
-        </ModalFooter>
       </Modal>
     </Form>
   );

@@ -36,7 +36,7 @@ export const VectorStep = ({ draft, onUpdate }: VectorStepProps): ReactNode => {
   };
 
   return (
-    <Form>
+    <Form style={{ maxWidth: "600px" }}>
       <Alert isInline variant={AlertVariant.info} title="Vector log forwarding">
         Collects structured logs from workflow runtimes and Data Index for observability.
       </Alert>

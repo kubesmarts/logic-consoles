@@ -65,7 +65,7 @@ export const GatewayStep = ({ draft, onUpdate }: GatewayStepProps): ReactNode =>
   };
 
   return (
-    <Form>
+    <Form style={{ maxWidth: "600px" }}>
       <Alert isInline variant={AlertVariant.info} title="Workflow Gateway">
         The gateway exposes workflow execution APIs. Configure external access via Ingress (Kubernetes/KIND) or Route
         (OpenShift).

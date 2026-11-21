@@ -3,8 +3,8 @@
  * Uses ResourceEditor (from C) for full-CR review/dry-run/submit.
  * Shows per-component readiness via reconciliation state.
  */
-import { type ReactNode, useState, useCallback } from "react";
-import { PageSection, Title, Button, EmptyState, EmptyStateBody } from "@patternfly/react-core";
+import { type ReactNode, useState, useCallback, useEffect, useRef } from "react";
+import { PageSection, Title, Button, EmptyState, EmptyStateBody, Alert, Spinner } from "@patternfly/react-core";
 import { Table, Thead, Tbody, Tr, Th, Td } from "@patternfly/react-table";
 import { CheckCircleIcon, ClockIcon, ExclamationCircleIcon } from "@patternfly/react-icons";
 import { useConsole } from "../../app/ConsoleContext.tsx";
@@ -17,21 +17,34 @@ interface ReviewStepProps {
   readonly draft: PlatformSetupDraft;
   readonly onComplete?: () => void;
   readonly onCancel?: () => void;
+  readonly editMode?: boolean;
+  readonly existingPlatform?: KubeObject<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus> | null;
 }
 
-type PostSubmitState = "ready" | "submitted" | "error";
+type PostSubmitState = "ready" | "submitted" | "reconciling" | "reconciled" | "error";
 
-export const ReviewStep = ({ draft, onComplete, onCancel }: ReviewStepProps): ReactNode => {
+export const ReviewStep = ({ draft, onComplete, onCancel, editMode = false, existingPlatform }: ReviewStepProps): ReactNode => {
   const { kubernetes } = useConsole();
   const [postSubmitState, setPostSubmitState] = useState<PostSubmitState>("ready");
   const [submittedObject, setSubmittedObject] = useState<KubeObject<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus> | null>(null);
+  const [observedObject, setObservedObject] = useState<KubeObject<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Build the CR from draft
   const platformCR = buildPlatformCR(draft);
 
+  // In edit mode, merge with existing platform to preserve resourceVersion and other fields
+  const seed = editMode && existingPlatform
+    ? {
+        ...existingPlatform,
+        spec: platformCR.spec,
+      }
+    : platformCR;
+
   const handleWriteSuccess = useCallback((result: KubeObject<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus>) => {
     setSubmittedObject(result);
+    setObservedObject(result);
     setPostSubmitState("submitted");
     setError(null);
   }, []);
@@ -41,16 +54,75 @@ export const ReviewStep = ({ draft, onComplete, onCancel }: ReviewStepProps): Re
     setPostSubmitState("error");
   }, []);
 
+  // Poll for reconciliation after submission
+  useEffect(() => {
+    if (!submittedObject || postSubmitState === "ready" || postSubmitState === "error") {
+      return;
+    }
+
+    // Create new abort controller for this polling session
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
+    const pollReconciliation = async () => {
+      try {
+        const current = await kubernetes.get<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus>(
+          {
+            gvk: { group: LOGIC_GROUP, version: LOGIC_VERSION, kind: LogicKinds.ClusterLogicPlatform },
+            name: submittedObject.metadata.name,
+            namespace: submittedObject.metadata.namespace,
+          },
+          signal,
+        );
+
+        setObservedObject(current);
+
+        // Check if reconciled
+        const reconciled =
+          current.status?.observedGeneration !== undefined &&
+          current.metadata.generation !== undefined &&
+          current.status.observedGeneration === current.metadata.generation;
+
+        if (reconciled) {
+          setPostSubmitState("reconciled");
+        } else {
+          setPostSubmitState("reconciling");
+          // Continue polling
+          if (!signal.aborted) {
+            setTimeout(() => void pollReconciliation(), 2000);
+          }
+        }
+      } catch {
+        if (!signal.aborted) {
+          // On error, keep polling
+          setTimeout(() => void pollReconciliation(), 2000);
+        }
+      }
+    };
+
+    // Start polling after a brief delay
+    const timeoutId = setTimeout(() => void pollReconciliation(), 1000);
+
+    return () => {
+      clearTimeout(timeoutId);
+      abortControllerRef.current?.abort();
+    };
+  }, [submittedObject, postSubmitState, kubernetes]);
+
   // If submitted, show readiness screen
   if (postSubmitState !== "ready") {
     const stateMessages = {
       submitted: "Platform submitted",
+      reconciling: "Platform reconciling",
+      reconciled: "Platform ready",
       error: "Submission failed",
       ready: "",
     };
 
     const stateDescriptions = {
-      submitted: "The ClusterLogicPlatform has been submitted. The operator is now processing it.",
+      submitted: "The ClusterLogicPlatform has been submitted. Waiting for operator to process it.",
+      reconciling: "The operator is processing the platform configuration.",
+      reconciled: "The platform has been reconciled and is ready.",
       error: "Failed to submit the platform. Please check the error below.",
       ready: "",
     };
@@ -75,34 +147,49 @@ export const ReviewStep = ({ draft, onComplete, onCancel }: ReviewStepProps): Re
 
     return (
       <PageSection>
-        <EmptyState titleText={stateMessages[postSubmitState]} headingLevel="h2" status="success">
-          <EmptyStateBody>
-            <p>{stateDescriptions[postSubmitState]}</p>
-            {submittedObject && (
-              <>
-                <p style={{ marginTop: "1rem" }}>
-                  <strong>Platform name:</strong> {submittedObject.metadata.name}
-                </p>
-                <p>
-                  <strong>Target namespace:</strong> {submittedObject.spec?.targetNamespace}
-                </p>
-              </>
-            )}
-          </EmptyStateBody>
-          <Button
-            variant="primary"
-            onClick={() => {
-              if (onComplete) onComplete();
-            }}
-          >
-            Continue to workflows
-          </Button>
-        </EmptyState>
-
-        <div style={{ marginTop: "2rem" }}>
-          <Title headingLevel="h2">Component readiness</Title>
-          <ComponentReadiness draft={draft} />
+        <Title headingLevel="h1">{stateMessages[postSubmitState]}</Title>
+        <div style={{ marginTop: "1rem", marginBottom: "2rem" }}>
+          {postSubmitState === "submitted" || postSubmitState === "reconciling" ? (
+            <Alert variant="info" title={stateDescriptions[postSubmitState]} isInline>
+              <Spinner size="md" style={{ marginRight: "0.5rem" }} />
+              Checking operator status...
+            </Alert>
+          ) : (
+            <Alert variant="success" title={stateDescriptions[postSubmitState]} isInline />
+          )}
         </div>
+
+        {submittedObject && (
+          <>
+            <dl style={{ marginBottom: "2rem" }}>
+              <dt><strong>Platform name:</strong></dt>
+              <dd>{submittedObject.metadata.name}</dd>
+              <dt style={{ marginTop: "0.5rem" }}><strong>Target namespace:</strong></dt>
+              <dd>{submittedObject.spec?.targetNamespace}</dd>
+              {observedObject?.status?.phase && (
+                <>
+                  <dt style={{ marginTop: "0.5rem" }}><strong>Phase:</strong></dt>
+                  <dd>{observedObject.status.phase}</dd>
+                </>
+              )}
+            </dl>
+          </>
+        )}
+
+        <div style={{ marginBottom: "2rem" }}>
+          <Title headingLevel="h2">Component readiness</Title>
+          <ComponentReadinessTable status={observedObject?.status} draft={draft} />
+        </div>
+
+        <Button
+          variant="primary"
+          onClick={() => {
+            if (onComplete) onComplete();
+          }}
+          isDisabled={postSubmitState !== "reconciled"}
+        >
+          Continue to workflows
+        </Button>
       </PageSection>
     );
   }
@@ -119,16 +206,17 @@ export const ReviewStep = ({ draft, onComplete, onCancel }: ReviewStepProps): Re
             name: "cluster-platform",
             namespace: "",
           }}
-          seed={platformCR}
-          verb="create"
+          seed={seed}
+          verb={editMode ? "update" : "create"}
+          deployed={editMode ? existingPlatform ?? undefined : undefined}
           onWriteSuccess={handleWriteSuccess}
           onWriteError={handleWriteError}
         />
       </div>
 
       <div style={{ marginBottom: "1.5rem" }}>
-        <Title headingLevel="h2">Component readiness preview</Title>
-        <ComponentReadiness draft={draft} />
+        <Title headingLevel="h2">Component configuration preview</Title>
+        <ComponentReadinessTable status={null} draft={draft} />
       </div>
 
       <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
@@ -140,37 +228,104 @@ export const ReviewStep = ({ draft, onComplete, onCancel }: ReviewStepProps): Re
   );
 };
 
-function ComponentReadiness({
+function ComponentReadinessTable({
+  status,
   draft,
 }: {
+  readonly status: ClusterLogicPlatformCRStatus | null | undefined;
   readonly draft: PlatformSetupDraft;
 }): ReactNode {
-  const components = [
+  // If status is provided, show operator readiness
+  // Otherwise show configuration preview
+  const hasStatus = status !== null && status !== undefined;
+
+  type ComponentStatus = "ready" | "pending" | "failed" | "configured" | "skipped";
+
+  interface Component {
+    name: string;
+    enabled: boolean;
+    status: ComponentStatus;
+    description: string;
+    reason?: string;
+  }
+
+  const getComponentStatus = (
+    componentName: "dataIndex" | "vector" | "gateway",
+  ): { status: ComponentStatus; description: string; reason?: string } => {
+    if (!hasStatus) {
+      // Preview mode - show configured/pending based on draft
+      if (componentName === "dataIndex" && draft.executionMode === "history-enabled") {
+        return {
+          status: "configured",
+          description: `PostgreSQL: ${draft.dataIndex?.postgresqlServiceName || "(service required)"}`,
+        };
+      }
+      if (componentName === "vector" && draft.executionMode === "history-enabled") {
+        return {
+          status: "configured",
+          description: `Watch namespace: ${draft.vector?.watchNamespaces?.[0] || draft.targetNamespace}`,
+        };
+      }
+      if (componentName === "gateway" && draft.gatewayIngress.enabled) {
+        return {
+          status: "configured",
+          description: `Ingress: ${draft.gatewayIngress.host || "(hostname required)"}`,
+        };
+      }
+      return { status: "skipped", description: "Not enabled" };
+    }
+
+    // Operator status mode
+    const componentStatus = status[componentName];
+    if (!componentStatus) {
+      return { status: "skipped", description: "Not enabled" };
+    }
+
+    const ready = componentStatus.ready;
+    if (ready) {
+      return { status: "ready", description: "Ready" };
+    }
+
+    // Check conditions for reason
+    const conditions = status.conditions || [];
+    const componentCondition = conditions.find(
+      (c) => c.type.toLowerCase().includes(componentName.toLowerCase()),
+    );
+
+    return {
+      status: status.phase === "Failed" ? "failed" : "pending",
+      description: componentCondition?.status === "False" ? "Not ready" : "Pending",
+      reason: componentCondition?.reason || componentCondition?.message,
+    };
+  };
+
+  const components: Component[] = [
     {
       name: "Target Namespace",
       enabled: true,
-      status: draft.targetNamespace ? "configured" : "pending",
+      status: hasStatus ? "ready" : (draft.targetNamespace ? "configured" : "pending"),
       description: draft.targetNamespace || "Waiting for namespace selection",
     },
-    {
-      name: "Workflow Gateway",
-      enabled: draft.gatewayIngress.enabled,
-      status: draft.gatewayIngress.enabled ? "configured" : "skipped",
-      description: draft.gatewayIngress.enabled ? `Ingress: ${draft.gatewayIngress.host || "(hostname required)"}` : "Gateway ingress disabled",
-    },
-    ...(draft.executionMode === "history-enabled"
+    ...(draft.gatewayIngress.enabled || (hasStatus && status.gateway)
+      ? [
+          {
+            name: "Workflow Gateway",
+            enabled: true,
+            ...getComponentStatus("gateway"),
+          },
+        ]
+      : []),
+    ...(draft.executionMode === "history-enabled" || (hasStatus && status.dataIndex)
       ? [
           {
             name: "Data Index",
             enabled: true,
-            status: "configured" as const,
-            description: `PostgreSQL: ${draft.dataIndex?.postgresqlServiceName || "(service required)"}`,
+            ...getComponentStatus("dataIndex"),
           },
           {
             name: "Vector Logging",
             enabled: true,
-            status: "configured" as const,
-            description: `Watch namespace: ${draft.vector?.watchNamespaces?.[0] || draft.targetNamespace}`,
+            ...getComponentStatus("vector"),
           },
         ]
       : []),
@@ -190,6 +345,12 @@ function ComponentReadiness({
           <Tr key={comp.name}>
             <Td>{comp.name}</Td>
             <Td>
+              {comp.status === "ready" && (
+                <>
+                  <CheckCircleIcon style={{ color: "green", marginRight: "0.5rem" }} />
+                  Ready
+                </>
+              )}
               {comp.status === "configured" && (
                 <>
                   <CheckCircleIcon style={{ color: "green", marginRight: "0.5rem" }} />
@@ -202,6 +363,12 @@ function ComponentReadiness({
                   Pending
                 </>
               )}
+              {comp.status === "failed" && (
+                <>
+                  <ExclamationCircleIcon style={{ color: "red", marginRight: "0.5rem" }} />
+                  Failed
+                </>
+              )}
               {comp.status === "skipped" && (
                 <>
                   <ExclamationCircleIcon style={{ color: "blue", marginRight: "0.5rem" }} />
@@ -209,7 +376,14 @@ function ComponentReadiness({
                 </>
               )}
             </Td>
-            <Td>{comp.description}</Td>
+            <Td>
+              {comp.description}
+              {comp.reason && (
+                <div style={{ marginTop: "0.25rem", fontSize: "0.9em", color: "#6a6e73" }}>
+                  {comp.reason}
+                </div>
+              )}
+            </Td>
           </Tr>
         ))}
       </Tbody>

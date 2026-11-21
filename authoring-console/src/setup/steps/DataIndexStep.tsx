@@ -37,7 +37,7 @@ export const DataIndexStep = ({ draft, onUpdate }: DataIndexStepProps): ReactNod
   };
 
   return (
-    <Form>
+    <Form style={{ maxWidth: "600px" }}>
       <Alert
         isInline
         variant={AlertVariant.info}
