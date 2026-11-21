@@ -90,22 +90,23 @@ export const createServer = (
   };
 
   const server = http.createServer(async (req, res) => {
-    // Add CORS headers for same-origin API calls
+    // Validate loopback request FIRST (fail-closed, even for OPTIONS)
+    if (!validateLoopbackRequest(req, origin)) {
+      res.writeHead(403);
+      res.end("Forbidden");
+      return;
+    }
+
+    // Add CORS headers for same-origin API calls (after validation)
     res.setHeader("Access-Control-Allow-Origin", `http://127.0.0.1:${config.port}`);
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Session-Id, X-Context-Name");
     res.setHeader("Access-Control-Allow-Credentials", "true");
 
-    // Handle OPTIONS preflight
+    // Handle OPTIONS preflight (after loopback validation)
     if (req.method === "OPTIONS") {
       res.writeHead(204);
       res.end();
-      return;
-    }
-
-    // Validate loopback request (Host + Origin)
-    if (!validateLoopbackRequest(req, origin)) {
-      sendError(res, 403, "Invalid Host or Origin header");
       return;
     }
 
@@ -140,7 +141,12 @@ export const createServer = (
       try {
         await handleApiRequest(req, res, pathname, state, k8sClient);
       } catch (error) {
-        console.error("API error:", error);
+        // Sanitize error logging - never log full error object (could contain Secret contents, payloads)
+        const sanitizedMessage =
+          error instanceof Error
+            ? error.message.substring(0, 200) // Truncate to avoid leaking large payloads
+            : String(error).substring(0, 200);
+        console.error(`API error on ${pathname}:`, sanitizedMessage);
         sendError(res, 500, error instanceof Error ? error.message : "Internal server error");
       }
       return;

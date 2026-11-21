@@ -5,7 +5,7 @@
  * Maps HTTP errors to src/contracts/errors.ts GatewayError taxonomy.
  */
 import type { GatewayClientConfig, GatewayErrorResponse } from "../gateway-client.js";
-import { fetchGateway } from "../gateway-client.js";
+import { fetchGateway, validateGatewayHref } from "../gateway-client.js";
 
 /** Map HTTP error to GatewayError shape from contracts/errors.ts */
 const mapToGatewayError = (error: unknown): unknown => {
@@ -126,7 +126,10 @@ export const handleGetInstance = async (
   }
 };
 
-/** Handle POST to execute link (async) */
+/**
+ * Handle POST to execute link (async).
+ * SECURITY: href is UNTRUSTED browser input - validate before use.
+ */
 export const handleExecute = async (
   config: GatewayClientConfig,
   href: string,
@@ -134,7 +137,10 @@ export const handleExecute = async (
   signal?: AbortSignal
 ): Promise<unknown> => {
   try {
-    const response = await fetchGateway(config, href, {
+    // Validate and constrain href to gateway origin (SSRF prevention)
+    const validatedPath = validateGatewayHref(href, config);
+
+    const response = await fetchGateway(config, validatedPath, {
       method: "POST",
       body: input,
       signal,
@@ -145,7 +151,10 @@ export const handleExecute = async (
   }
 };
 
-/** Handle POST to executeSync link */
+/**
+ * Handle POST to executeSync link.
+ * SECURITY: href is UNTRUSTED browser input - validate before use.
+ */
 export const handleExecuteSync = async (
   config: GatewayClientConfig,
   href: string,
@@ -153,7 +162,10 @@ export const handleExecuteSync = async (
   signal?: AbortSignal
 ): Promise<unknown> => {
   try {
-    const response = await fetchGateway(config, href, {
+    // Validate and constrain href to gateway origin (SSRF prevention)
+    const validatedPath = validateGatewayHref(href, config);
+
+    const response = await fetchGateway(config, validatedPath, {
       method: "POST",
       body: input,
       signal,
@@ -164,7 +176,10 @@ export const handleExecuteSync = async (
   }
 };
 
-/** Handle instance action (suspend/resume/cancel) */
+/**
+ * Handle instance action (suspend/resume/cancel).
+ * SECURITY: linkHref is UNTRUSTED browser input - validate before use.
+ */
 export const handleInstanceAction = async (
   config: GatewayClientConfig,
   linkHref: string,
@@ -172,8 +187,11 @@ export const handleInstanceAction = async (
   signal?: AbortSignal
 ): Promise<unknown> => {
   try {
-    // Substitute {id} in the templated link
-    const href = linkHref.replace("{id}", encodeURIComponent(instanceId));
+    // Validate linkHref BEFORE substitution (SSRF prevention)
+    const validatedPath = validateGatewayHref(linkHref, config);
+
+    // Substitute {id} in the validated templated link
+    const href = validatedPath.replace("{id}", encodeURIComponent(instanceId));
 
     const response = await fetchGateway(config, href, {
       method: "POST",

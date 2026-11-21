@@ -23,6 +23,53 @@ export interface GatewayErrorResponse {
 }
 
 /**
+ * Validate and constrain a browser-supplied href to the configured gateway.
+ *
+ * CRITICAL SECURITY: Browser-supplied hrefs are UNTRUSTED. An absolute href in
+ * `new URL(path, baseUrl)` can override baseUrl and cause SSRF to arbitrary hosts
+ * (cloud metadata, internal services). This function ensures we forward ONLY to
+ * the SELECTED gateway destination.
+ *
+ * The gateway's advertised `_links` hrefs are relative (`/v1/runtime/...`).
+ * Reject any absolute URL or href that could bypass the gateway origin.
+ *
+ * @param href - Untrusted href from browser (from definition._links)
+ * @param config - Gateway configuration with trusted baseUrl
+ * @returns Validated relative path (pathname + search only)
+ * @throws Error if href is absolute or would bypass the gateway origin
+ */
+export const validateGatewayHref = (href: string, config: GatewayClientConfig): string => {
+  // Reject absolute URLs with schemes (http:, https:, etc.)
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href)) {
+    throw new Error(`Rejected absolute href with scheme: ${href}`);
+  }
+
+  // Reject hrefs with authority markers (//host/path)
+  if (href.includes("//")) {
+    throw new Error(`Rejected href with authority marker: ${href}`);
+  }
+
+  // Only allow hrefs starting with /
+  if (!href.startsWith("/")) {
+    throw new Error(`Rejected non-root-relative href: ${href}`);
+  }
+
+  // Resolve against baseUrl and verify origin constraint (defense in depth)
+  const gatewayUrl = new URL(config.baseUrl);
+  const resolvedUrl = new URL(href, config.baseUrl);
+
+  // Confirm resolved URL's origin matches the configured gateway origin
+  if (resolvedUrl.origin !== gatewayUrl.origin) {
+    throw new Error(
+      `Rejected href: resolved origin ${resolvedUrl.origin} does not match gateway origin ${gatewayUrl.origin}`
+    );
+  }
+
+  // Return only pathname + search (no origin, no fragment)
+  return resolvedUrl.pathname + resolvedUrl.search;
+};
+
+/**
  * Make an HTTP request to the gateway.
  * Returns response data on success, throws GatewayErrorResponse on HTTP error.
  */
