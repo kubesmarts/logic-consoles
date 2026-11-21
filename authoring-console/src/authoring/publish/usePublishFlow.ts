@@ -87,7 +87,7 @@ export const buildPublishCandidate = async (
 
   if (mode === "create") {
     // Generate CR name
-    const nameResult = generateCrName({ namespace, workflowName, version });
+    const nameResult = await generateCrName({ namespace, workflowName, version });
     if ("error" in nameResult) {
       throw new Error("CR name too long - please choose a shorter workflow name or version");
     }

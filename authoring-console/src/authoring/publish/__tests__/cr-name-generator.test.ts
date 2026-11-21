@@ -18,8 +18,8 @@ import type { GeneratedCrNameInput } from "../../../contracts/workflow.ts";
 
 describe("generateCrName", () => {
   describe("ordinary names (no hash)", () => {
-    it("generates {name}-v-{M}-{m}-{p} for simple cases", () => {
-      const result = generateCrName({
+    it("generates {name}-v-{M}-{m}-{p} for simple cases", async () => {
+      const result = await generateCrName({
         namespace: "default",
         workflowName: "orders",
         version: "1.2.3",
@@ -27,8 +27,8 @@ describe("generateCrName", () => {
       expect(result).toEqual({ name: "orders-v-1-2-3" });
     });
 
-    it("handles single-digit versions", () => {
-      const result = generateCrName({
+    it("handles single-digit versions", async () => {
+      const result = await generateCrName({
         namespace: "default",
         workflowName: "simple",
         version: "0.0.1",
@@ -36,8 +36,8 @@ describe("generateCrName", () => {
       expect(result).toEqual({ name: "simple-v-0-0-1" });
     });
 
-    it("handles multi-digit version components", () => {
-      const result = generateCrName({
+    it("handles multi-digit version components", async () => {
+      const result = await generateCrName({
         namespace: "prod",
         workflowName: "api",
         version: "12.345.6789",
@@ -47,8 +47,8 @@ describe("generateCrName", () => {
   });
 
   describe("prerelease identifiers", () => {
-    it("appends prerelease with hyphen separators", () => {
-      const result = generateCrName({
+    it("appends prerelease with hyphen separators", async () => {
+      const result = await generateCrName({
         namespace: "default",
         workflowName: "orders",
         version: "1.3.0-rc.1",
@@ -57,8 +57,8 @@ describe("generateCrName", () => {
       expect(result).toEqual({ name: "orders-v-1-3-0-rc-1" });
     });
 
-    it("handles multiple prerelease identifiers", () => {
-      const result = generateCrName({
+    it("handles multiple prerelease identifiers", async () => {
+      const result = await generateCrName({
         namespace: "default",
         workflowName: "api",
         version: "2.0.0-beta.2.final",
@@ -66,8 +66,8 @@ describe("generateCrName", () => {
       expect(result).toEqual({ name: "api-v-2-0-0-beta-2-final" });
     });
 
-    it("handles alphanumeric prerelease", () => {
-      const result = generateCrName({
+    it("handles alphanumeric prerelease", async () => {
+      const result = await generateCrName({
         namespace: "default",
         workflowName: "service",
         version: "1.0.0-alpha",
@@ -77,8 +77,8 @@ describe("generateCrName", () => {
   });
 
   describe("case-folding triggers hash", () => {
-    it("adds hash when workflow name has uppercase letters", () => {
-      const result = generateCrName({
+    it("adds hash when workflow name has uppercase letters", async () => {
+      const result = await generateCrName({
         namespace: "default",
         workflowName: "MyWorkflow",
         version: "1.0.0",
@@ -88,7 +88,7 @@ describe("generateCrName", () => {
       if ("name" in result) {
         expect(result.name).toMatch(/^myworkflow-[0-9a-f]{8}-v-1-0-0$/);
         // Should be deterministic
-        const result2 = generateCrName({
+        const result2 = await generateCrName({
           namespace: "default",
           workflowName: "MyWorkflow",
           version: "1.0.0",
@@ -97,13 +97,13 @@ describe("generateCrName", () => {
       }
     });
 
-    it("distinguishes case-different inputs via hash", () => {
-      const upper = generateCrName({
+    it("distinguishes case-different inputs via hash", async () => {
+      const upper = await generateCrName({
         namespace: "default",
         workflowName: "API",
         version: "1.0.0",
       });
-      const lower = generateCrName({
+      const lower = await generateCrName({
         namespace: "default",
         workflowName: "api",
         version: "1.0.0",
@@ -122,9 +122,9 @@ describe("generateCrName", () => {
   });
 
   describe("prerelease with literal hyphen triggers hash", () => {
-    it("adds hash when prerelease contains a literal hyphen", () => {
+    it("adds hash when prerelease contains a literal hyphen", async () => {
       // A version like `1.0.0-rc-1` has a literal hyphen in the prerelease part
-      const result = generateCrName({
+      const result = await generateCrName({
         namespace: "default",
         workflowName: "service",
         version: "1.0.0-rc-1",
@@ -136,13 +136,13 @@ describe("generateCrName", () => {
       }
     });
 
-    it("distinguishes literal-hyphen from dot-converted prerelease", () => {
-      const withDot = generateCrName({
+    it("distinguishes literal-hyphen from dot-converted prerelease", async () => {
+      const withDot = await generateCrName({
         namespace: "default",
         workflowName: "api",
         version: "1.0.0-rc.1",
       });
-      const withHyphen = generateCrName({
+      const withHyphen = await generateCrName({
         namespace: "default",
         workflowName: "api",
         version: "1.0.0-rc-1",
@@ -161,10 +161,10 @@ describe("generateCrName", () => {
   });
 
   describe("long-name truncation + hash", () => {
-    it("truncates prefix and adds hash when name is too long", () => {
+    it("truncates prefix and adds hash when name is too long", async () => {
       // A very long workflow name
       const longName = "a".repeat(60);
-      const result = generateCrName({
+      const result = await generateCrName({
         namespace: "default",
         workflowName: longName,
         version: "1.0.0",
@@ -186,10 +186,10 @@ describe("generateCrName", () => {
       }
     });
 
-    it("trims trailing hyphens from truncated prefix", () => {
+    it("trims trailing hyphens from truncated prefix", async () => {
       // A name that ends with hyphens after truncation
       const name = "my-workflow-with-hyphens".repeat(3);
-      const result = generateCrName({
+      const result = await generateCrName({
         namespace: "default",
         workflowName: name,
         version: "1.0.0",
@@ -205,10 +205,10 @@ describe("generateCrName", () => {
   });
 
   describe("insufficient room error signal", () => {
-    it("signals error when suffix alone exceeds 63 chars", () => {
+    it("signals error when suffix alone exceeds 63 chars", async () => {
       // A version with extremely long prerelease
       const longPrerelease = "a".repeat(60);
-      const result = generateCrName({
+      const result = await generateCrName({
         namespace: "default",
         workflowName: "x",
         version: `1.0.0-${longPrerelease}`,
@@ -216,10 +216,10 @@ describe("generateCrName", () => {
       expect(result).toEqual({ error: "insufficient-room" });
     });
 
-    it("signals error when no room for nonempty prefix", () => {
+    it("signals error when no room for nonempty prefix", async () => {
       // A version where suffix + hash leaves no room for prefix
       const longPrerelease = "a".repeat(45);
-      const result = generateCrName({
+      const result = await generateCrName({
         namespace: "default",
         workflowName: "myworkflow",
         version: `1.0.0-${longPrerelease}`,
@@ -228,10 +228,10 @@ describe("generateCrName", () => {
       expect(result).toEqual({ error: "insufficient-room" });
     });
 
-    it("signals error when prefix becomes empty after trimming hyphens", () => {
+    it("signals error when prefix becomes empty after trimming hyphens", async () => {
       // Edge case: very long prerelease that leaves minimal room for prefix
       // Suffix: "-v-1-0-0-" + 54 chars of prerelease = 63 chars (no room for prefix)
-      const result = generateCrName({
+      const result = await generateCrName({
         namespace: "default",
         workflowName: "myworkflow",
         version: `1.0.0-${"x".repeat(54)}`,
@@ -241,32 +241,32 @@ describe("generateCrName", () => {
   });
 
   describe("determinism", () => {
-    it("produces same output for same input", () => {
+    it("produces same output for same input", async () => {
       const input: GeneratedCrNameInput = {
         namespace: "prod",
         workflowName: "MyWorkflow",
         version: "2.3.4-rc.5",
       };
-      const result1 = generateCrName(input);
-      const result2 = generateCrName(input);
+      const result1 = await generateCrName(input);
+      const result2 = await generateCrName(input);
       expect(result1).toEqual(result2);
     });
 
-    it("hash is deterministic for truncated names", () => {
+    it("hash is deterministic for truncated names", async () => {
       const longName = "a".repeat(60);
       const input: GeneratedCrNameInput = {
         namespace: "default",
         workflowName: longName,
         version: "1.2.3",
       };
-      const result1 = generateCrName(input);
-      const result2 = generateCrName(input);
+      const result1 = await generateCrName(input);
+      const result2 = await generateCrName(input);
       expect(result1).toEqual(result2);
     });
   });
 
   describe("collision-distinct names", () => {
-    it("generates distinct names for different inputs that collide after lowercasing", () => {
+    it("generates distinct names for different inputs that collide after lowercasing", async () => {
       const input1: GeneratedCrNameInput = {
         namespace: "default",
         workflowName: "MyWorkflow",
@@ -277,8 +277,8 @@ describe("generateCrName", () => {
         workflowName: "myworkflow",
         version: "1.0.0",
       };
-      const result1 = generateCrName(input1);
-      const result2 = generateCrName(input2);
+      const result1 = await generateCrName(input1);
+      const result2 = await generateCrName(input2);
       expect(result1).toHaveProperty("name");
       expect(result2).toHaveProperty("name");
       if ("name" in result1 && "name" in result2) {
@@ -287,7 +287,7 @@ describe("generateCrName", () => {
       }
     });
 
-    it("generates distinct names for different namespaces", () => {
+    it("generates distinct names for different namespaces", async () => {
       const input1: GeneratedCrNameInput = {
         namespace: "ns1",
         workflowName: "api",
@@ -298,8 +298,8 @@ describe("generateCrName", () => {
         workflowName: "api",
         version: "1.0.0",
       };
-      const result1 = generateCrName(input1);
-      const result2 = generateCrName(input2);
+      const result1 = await generateCrName(input1);
+      const result2 = await generateCrName(input2);
       // Both should produce the same name (namespace is not in the name itself, only in hash input)
       // But if there's a hash, they should differ
       // Actually, for simple cases without hash, they'll be the same name
@@ -308,7 +308,7 @@ describe("generateCrName", () => {
       // This is expected: namespace collision is handled by Kubernetes scoping, not name generation
     });
 
-    it("generates distinct names for different versions", () => {
+    it("generates distinct names for different versions", async () => {
       const input1: GeneratedCrNameInput = {
         namespace: "default",
         workflowName: "api",
@@ -319,14 +319,14 @@ describe("generateCrName", () => {
         workflowName: "api",
         version: "1.0.1",
       };
-      const result1 = generateCrName(input1);
-      const result2 = generateCrName(input2);
+      const result1 = await generateCrName(input1);
+      const result2 = await generateCrName(input2);
       expect(result1).toEqual({ name: "api-v-1-0-0" });
       expect(result2).toEqual({ name: "api-v-1-0-1" });
       expect(result1).not.toEqual(result2);
     });
 
-    it("generates distinct names for truncated inputs that differ", () => {
+    it("generates distinct names for truncated inputs that differ", async () => {
       const longName1 = "a".repeat(60) + "1";
       const longName2 = "a".repeat(60) + "2";
       const input1: GeneratedCrNameInput = {
@@ -339,8 +339,8 @@ describe("generateCrName", () => {
         workflowName: longName2,
         version: "1.0.0",
       };
-      const result1 = generateCrName(input1);
-      const result2 = generateCrName(input2);
+      const result1 = await generateCrName(input1);
+      const result2 = await generateCrName(input2);
       expect(result1).toHaveProperty("name");
       expect(result2).toHaveProperty("name");
       if ("name" in result1 && "name" in result2) {
@@ -351,7 +351,7 @@ describe("generateCrName", () => {
   });
 
   describe("DNS-1123 validity", () => {
-    it("generates valid DNS-1123 label for all ordinary inputs", () => {
+    it("generates valid DNS-1123 label for all ordinary inputs", async () => {
       const inputs: GeneratedCrNameInput[] = [
         { namespace: "default", workflowName: "simple", version: "1.0.0" },
         { namespace: "prod", workflowName: "my-workflow", version: "2.3.4-rc.1" },
@@ -359,7 +359,7 @@ describe("generateCrName", () => {
         { namespace: "default", workflowName: "a".repeat(60), version: "1.0.0" },
       ];
       for (const input of inputs) {
-        const result = generateCrName(input);
+        const result = await generateCrName(input);
         if ("name" in result) {
           // Check DNS-1123 rules
           expect(result.name.length).toBeLessThanOrEqual(63);
@@ -372,9 +372,9 @@ describe("generateCrName", () => {
   });
 
   describe("edge cases", () => {
-    it("handles operator sample naming convention (hello-world-v1-0-0)", () => {
+    it("handles operator sample naming convention (hello-world-v1-0-0)", async () => {
       // The generator should produce a similar style
-      const result = generateCrName({
+      const result = await generateCrName({
         namespace: "default",
         workflowName: "hello-world",
         version: "1.0.0",
@@ -382,8 +382,8 @@ describe("generateCrName", () => {
       expect(result).toEqual({ name: "hello-world-v-1-0-0" });
     });
 
-    it("handles single-character workflow name", () => {
-      const result = generateCrName({
+    it("handles single-character workflow name", async () => {
+      const result = await generateCrName({
         namespace: "default",
         workflowName: "x",
         version: "1.0.0",
@@ -391,8 +391,8 @@ describe("generateCrName", () => {
       expect(result).toEqual({ name: "x-v-1-0-0" });
     });
 
-    it("handles zero version components", () => {
-      const result = generateCrName({
+    it("handles zero version components", async () => {
+      const result = await generateCrName({
         namespace: "default",
         workflowName: "api",
         version: "0.0.0",
@@ -400,8 +400,8 @@ describe("generateCrName", () => {
       expect(result).toEqual({ name: "api-v-0-0-0" });
     });
 
-    it("handles version with missing patch (defaults to 0)", () => {
-      const result = generateCrName({
+    it("handles version with missing patch (defaults to 0)", async () => {
+      const result = await generateCrName({
         namespace: "default",
         workflowName: "api",
         version: "1.2",

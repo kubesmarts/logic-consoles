@@ -14,7 +14,6 @@
  * PURE module. No side effects. Exhaustively tested. This is the load-bearing part.
  */
 
-import { createHash } from "crypto";
 import type { GeneratedCrNameInput } from "../../contracts/workflow.ts";
 
 const DNS_1123_MAX_LENGTH = 63;
@@ -23,13 +22,27 @@ const VERSION_SEPARATOR = "-v-";
 const PRERELEASE_SEPARATOR = "-";
 
 /**
+ * Compute SHA-256 hash using Web Crypto API.
+ * Returns the first 8 lowercase hex digits.
+ */
+const computeHash = async (namespace: string, workflowName: string, version: string): Promise<string> => {
+  const hashInput = JSON.stringify([namespace, workflowName, version]);
+  const encoder = new TextEncoder();
+  const data = encoder.encode(hashInput);
+  const hashBuffer = await globalThis.crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hashHex.slice(0, 8);
+};
+
+/**
  * Generate a deterministic CR name per the ADR algorithm.
  *
  * @returns The generated CR name, or an error object if the name cannot fit.
  */
-export const generateCrName = (
+export const generateCrName = async (
   input: GeneratedCrNameInput,
-): { name: string } | { error: "insufficient-room" } => {
+): Promise<{ name: string } | { error: "insufficient-room" }> => {
   const { namespace, workflowName, version } = input;
 
   // Parse version into main and prerelease parts
@@ -62,9 +75,8 @@ export const generateCrName = (
   // Compute hash if needed (8 hex digits from SHA-256 of [namespace, workflowName, version])
   let hashPart = "";
   if (needsHash) {
-    const hashInput = JSON.stringify([namespace, workflowName, version]);
-    const sha256 = createHash("sha256").update(hashInput, "utf8").digest("hex");
-    hashPart = `${HASH_SEPARATOR}${sha256.slice(0, 8)}`;
+    const hash = await computeHash(namespace, workflowName, version);
+    hashPart = `${HASH_SEPARATOR}${hash}`;
   }
 
   // Calculate available space for prefix
@@ -89,9 +101,8 @@ export const generateCrName = (
   // If we truncated, we need a hash (even if we didn't need one before)
   if (truncated && !needsHash) {
     // Recalculate with hash
-    const hashInput = JSON.stringify([namespace, workflowName, version]);
-    const sha256 = createHash("sha256").update(hashInput, "utf8").digest("hex");
-    hashPart = `${HASH_SEPARATOR}${sha256.slice(0, 8)}`;
+    const hash = await computeHash(namespace, workflowName, version);
+    hashPart = `${HASH_SEPARATOR}${hash}`;
     // Recalculate available space (reserve 9 chars for hash)
     const newReservedForSuffix = suffix.length + hashPart.length;
     const newAvailableForPrefix = DNS_1123_MAX_LENGTH - newReservedForSuffix;
