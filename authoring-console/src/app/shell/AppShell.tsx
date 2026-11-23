@@ -28,6 +28,7 @@ import {
   ToolbarGroup,
   ToolbarItem,
 } from "@patternfly/react-core";
+import "./console-brand.css";
 import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
 import MoonIcon from "@patternfly/react-icons/dist/esm/icons/moon-icon";
 import SunIcon from "@patternfly/react-icons/dist/esm/icons/sun-icon";
@@ -58,7 +59,7 @@ export const AppShell = ({ children }: { readonly children: ReactNode }): ReactN
   const contextLabel = session.context.contextName || "Disconnected";
 
   const masthead = (
-    <Masthead>
+    <Masthead className="console-masthead pf-v6-theme-dark">
       <MastheadMain>
         <MastheadToggle>
           <PageToggleButton variant="plain" aria-label="Global navigation" id="nav-toggle">
@@ -66,13 +67,13 @@ export const AppShell = ({ children }: { readonly children: ReactNode }): ReactN
           </PageToggleButton>
         </MastheadToggle>
         <MastheadBrand>
-          <MastheadLogo component="a" href="#/workflows">
+          <MastheadLogo className="console-product-name" component="a" href="#/workflows">
             Authoring Console
           </MastheadLogo>
         </MastheadBrand>
       </MastheadMain>
       <MastheadContent>
-        <Toolbar isFullHeight isStatic>
+        <Toolbar isFullHeight isStatic colorVariant="no-background">
           <ToolbarContent>
             <ToolbarGroup align={{ default: "alignEnd" }}>
               <ToolbarItem>
@@ -98,7 +99,7 @@ export const AppShell = ({ children }: { readonly children: ReactNode }): ReactN
   const sidebar = (
     <PageSidebar>
       <PageSidebarBody>
-        <Nav aria-label="Primary navigation">
+        <Nav className="console-navigation" aria-label="Primary navigation">
           <NavList>
             {PRIMARY_NAV.map((entry) => (
               <NavItem

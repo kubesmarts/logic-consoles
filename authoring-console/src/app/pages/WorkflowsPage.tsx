@@ -54,7 +54,7 @@ export const WorkflowsPage = (): ReactNode => {
       <PageSection isFilled={false}>
         <Flex alignItems={{ default: "alignItemsCenter" }} justifyContent={{ default: "justifyContentSpaceBetween" }}>
           <Title headingLevel="h1">Workflows</Title>
-          <Button variant="primary" onClick={() => navigate("/authoring")}>Create workflow</Button>
+          <Button variant="primary" className="console-primary-action" onClick={() => navigate("/authoring")}>Create workflow</Button>
         </Flex>
       </PageSection>
       <PageSection>

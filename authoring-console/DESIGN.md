@@ -13,6 +13,10 @@ These captures show our fixture-backed console at 1440 × 900. Review the expand
 | Workflows | [Before](docs/design/workflows-before.png) | [After](docs/design/workflows-after.png) |
 | Workflow version | [Before](docs/design/version-before.png) | [After](docs/design/version-after.png) |
 
+### Brand palette
+
+Use a black masthead with white product text in both themes. Red Hat red (`#ee0000`) marks the masthead edge, the active navigation item, the workflow detail tab, and the primary Create workflow and Run this version actions. Use the darker PatternFly reds for button hover and pressed states. Keep links and operational status indicators in their PatternFly semantic colors. [Dark theme preview](docs/design/version-dark.png)
+
 ## The shell
 
 Use one navigation tree for administrators and workflow authors. OpenShift’s unified navigation, resource lists, detail tabs and project selector are the conventions to carry over. Use **Namespace** throughout this console so the same instructions work on every cluster. The application owns its name and navigation. An embedded Operational Console view takes its surrounding shell from its host.

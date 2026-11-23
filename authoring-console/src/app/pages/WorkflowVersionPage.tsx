@@ -128,7 +128,7 @@ export const WorkflowVersionPage = (): ReactNode => {
               </Title>
             </div>
             <Flex spaceItems={{ default: "spaceItemsSm" }}>
-              <Button variant="primary" onClick={handleRunWorkflow}>
+              <Button variant="primary" className="console-primary-action" onClick={handleRunWorkflow}>
                 Run this version
               </Button>
               <Dropdown
@@ -157,7 +157,7 @@ export const WorkflowVersionPage = (): ReactNode => {
         </Stack>
       </PageSection>
       <PageSection>
-        <Tabs activeKey={activeTab} onSelect={(_event, key) => setActiveTab(String(key))}>
+        <Tabs className="console-resource-tabs" activeKey={activeTab} onSelect={(_event, key) => setActiveTab(String(key))}>
           <Tab eventKey="details" title={<TabTitleText>Details</TabTitleText>}>
             <Stack hasGutter style={{ paddingBlockStart: "var(--pf-t--global--spacer--lg)" }}>
               <StackItem><Title headingLevel="h2" size="xl">Workflow details</Title></StackItem>

@@ -19,11 +19,12 @@ test("review the workflow resource list and version details", async ({ page }) =
   await page.getByRole("row").filter({ hasText: "hello-world" }).getByRole("button").click();
   const version = page.getByRole("button", { name: "1.1.0" });
   await expect(version).toBeVisible();
-  if (process.env.DESIGN_CAPTURE === "after") await page.screenshot({ path: `docs/design/workflows-after.png` });
+  if (process.env.DESIGN_CAPTURE === "after") await page.screenshot({ animations: "disabled", path: `docs/design/workflows-after.png` });
   await version.click();
   await expect(page.getByTestId("cr-name")).toContainText("hello-world-v-1-1-0");
-  if (process.env.DESIGN_CAPTURE === "after") await page.screenshot({ path: `docs/design/version-after.png` });
+  if (process.env.DESIGN_CAPTURE === "after") await page.screenshot({ animations: "disabled", path: `docs/design/version-after.png` });
   await page.getByRole("button", { name: "Switch to dark theme" }).click();
+  if (process.env.DESIGN_CAPTURE === "after") await page.screenshot({ animations: "disabled", path: "docs/design/version-dark.png" });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("heading", { name: "Workflow details" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Run this version" })).toBeInViewport();
