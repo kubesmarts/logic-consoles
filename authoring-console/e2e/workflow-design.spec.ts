@@ -33,3 +33,21 @@ test("review the workflow resource list and version details", async ({ page }) =
   const binding = await columns.last().boundingBox();
   expect(binding!.y).toBeGreaterThanOrEqual(identity!.y + identity!.height);
 });
+
+test("keeps the Actions menu inside the Instance history page", async ({ page }) => {
+  await page.route("**/api/gateway/definitions", route => route.fulfill({ json: catalogFixture }));
+  await page.route("**/api/gateway/instances?**", route => route.fulfill({ json: [] }));
+  await page.route("**/api/k8s/list", route => route.fulfill({ json: { items: [] } }));
+  await openLauncher(page, "/workflows/default/hello-world/1.1.0");
+  await page.getByRole("tab", { name: "Instance history" }).click();
+  const actions = page.getByRole("button", { name: "Actions", exact: true });
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await actions.click();
+    for (const name of ["Publish new version", "Update this version"]) {
+      await expect(page.getByRole("menuitem", { name })).toBeInViewport({ ratio: 1 });
+    }
+    await page.keyboard.press("Escape");
+    await expect(actions).toBeFocused();
+  }
+});

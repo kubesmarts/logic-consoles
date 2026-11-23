@@ -132,11 +132,13 @@ export const WorkflowVersionPage = (): ReactNode => {
                 Run this version
               </Button>
               <Dropdown
+                popperProps={{ position: "end", preventOverflow: true }}
                 isOpen={actionsOpen}
                 onOpenChange={setActionsOpen}
                 toggle={(toggleRef) => (
                   <MenuToggle
                     ref={toggleRef}
+                    isExpanded={actionsOpen}
                     onClick={() => setActionsOpen(!actionsOpen)}
                   >
                     Actions
