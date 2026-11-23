@@ -8,15 +8,15 @@ import type { ReactNode } from "react";
 import { Toolbar, ToolbarContent, ToolbarItem } from "@patternfly/react-core";
 import { useConsole } from "../ConsoleContext.tsx";
 
-export const NamespaceBar = (): ReactNode => {
+export const NamespaceBar = ({ namespace }: { namespace?: string }): ReactNode => {
   const { session } = useConsole();
   return (
-    <Toolbar>
+    <Toolbar aria-label="Namespace scope" inset={{ default: "insetLg" }}>
       <ToolbarContent>
         <ToolbarItem>
-          <label>
-            Namespace <strong>{session.namespace ?? "—"}</strong>
-          </label>
+          <span>
+            Namespace <strong>{namespace ?? session.namespace ?? "—"}</strong>
+          </span>
         </ToolbarItem>
       </ToolbarContent>
     </Toolbar>

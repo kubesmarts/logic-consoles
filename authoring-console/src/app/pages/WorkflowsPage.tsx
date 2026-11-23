@@ -9,7 +9,11 @@ import { useState, type ReactNode } from "react";
 import {
   Bullseye,
   Button,
-  Content,
+  Flex,
+  SearchInput,
+  Toolbar,
+  ToolbarContent,
+  ToolbarItem,
   EmptyState,
   EmptyStateBody,
   PageSection,
@@ -26,7 +30,7 @@ import {
   Tr,
 } from "@patternfly/react-table";
 import { NamespaceBar } from "../shell/NamespaceBar.tsx";
-import { useNavigation } from "../ConsoleContext.tsx";
+import { useConsole, useNavigation } from "../ConsoleContext.tsx";
 import { useWorkflowFamilies, type WorkflowFamily } from "../queries.ts";
 
 const versionHref = (family: WorkflowFamily, version: string): string =>
@@ -34,27 +38,32 @@ const versionHref = (family: WorkflowFamily, version: string): string =>
 
 export const WorkflowsPage = (): ReactNode => {
   const { navigate } = useNavigation();
+  const { session } = useConsole();
+  const [filter, setFilter] = useState("");
   const { data, isPending, isError } = useWorkflowFamilies();
   const [expanded, setExpanded] = useState<Readonly<Record<string, boolean>>>({});
+
+  const visibleFamilies = data?.filter(family => family.key.workflowName.toLowerCase().includes(filter.trim().toLowerCase()));
 
   const toggle = (key: string): void =>
     setExpanded((current) => ({ ...current, [key]: !current[key] }));
 
   return (
     <>
-      <NamespaceBar />
-      <PageSection>
-        <Title headingLevel="h1">Workflows</Title>
-        <Content component="p">Deployed workflow families, grouped by namespace and document name.</Content>
-        <Button
-          variant="primary"
-          onClick={() => navigate("/authoring")}
-          style={{ marginTop: "1rem" }}
-        >
-          Create workflow
-        </Button>
+      <NamespaceBar namespace={session.namespace ?? "default"} />
+      <PageSection isFilled={false}>
+        <Flex alignItems={{ default: "alignItemsCenter" }} justifyContent={{ default: "justifyContentSpaceBetween" }}>
+          <Title headingLevel="h1">Workflows</Title>
+          <Button variant="primary" onClick={() => navigate("/authoring")}>Create workflow</Button>
+        </Flex>
       </PageSection>
       <PageSection>
+        <Toolbar aria-label="Workflow filters" inset={{ default: "insetNone" }}>
+          <ToolbarContent><ToolbarItem>
+            <SearchInput aria-label="Filter workflows by name" placeholder="Filter by name" value={filter}
+              onChange={(_, value) => setFilter(value)} onClear={() => setFilter("")} />
+          </ToolbarItem></ToolbarContent>
+        </Toolbar>
         {isPending ? (
           <Bullseye>
             <Spinner aria-label="Loading workflows" />
@@ -63,7 +72,7 @@ export const WorkflowsPage = (): ReactNode => {
           <EmptyState titleText="Workflows unavailable" headingLevel="h2" status="danger">
             <EmptyStateBody>The gateway catalog could not be read.</EmptyStateBody>
           </EmptyState>
-        ) : data && data.length > 0 ? (
+        ) : visibleFamilies && visibleFamilies.length > 0 ? (
           <Table aria-label="Workflow families" variant="compact">
             <Thead>
               <Tr>
@@ -73,7 +82,7 @@ export const WorkflowsPage = (): ReactNode => {
                 <Th>Versions</Th>
               </Tr>
             </Thead>
-            {data.map((family, rowIndex) => {
+            {visibleFamilies.map((family, rowIndex) => {
               const familyKey = `${family.key.namespace}/${family.key.workflowName}`;
               const isExpanded = Boolean(expanded[familyKey]);
               return (
@@ -95,16 +104,18 @@ export const WorkflowsPage = (): ReactNode => {
                     <Td />
                     <Td dataLabel="Deployed versions" colSpan={3}>
                       <ExpandableRowContent>
-                        {family.versions.map((row) => (
-                          <Button
-                            key={row.version.version}
-                            variant="link"
-                            isInline
-                            onClick={() => navigate(versionHref(family, row.version.version))}
-                          >
-                            {row.version.version}
-                          </Button>
-                        ))}
+                        <Flex>
+                          {family.versions.map((row) => (
+                            <Button
+                              key={row.version.version}
+                              variant="link"
+                              isInline
+                              onClick={() => navigate(versionHref(family, row.version.version))}
+                            >
+                              {row.version.version}
+                            </Button>
+                          ))}
+                        </Flex>
                       </ExpandableRowContent>
                     </Td>
                   </Tr>
@@ -112,6 +123,10 @@ export const WorkflowsPage = (): ReactNode => {
               );
             })}
           </Table>
+        ) : data?.length ? (
+          <EmptyState titleText="No matching workflows" headingLevel="h2">
+            <Button variant="link" onClick={() => setFilter("")}>Clear filter</Button>
+          </EmptyState>
         ) : (
           <EmptyState titleText="No workflows" headingLevel="h2">
             <EmptyStateBody>No workflows are deployed in this namespace.</EmptyStateBody>

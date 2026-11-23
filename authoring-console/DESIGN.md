@@ -2,6 +2,17 @@
 
 **Draft for review · 2026-11-20.** Use the OpenShift 4.20 web console as the interaction reference and PatternFly 6 React as the visual baseline. The version pins a design reference independently of the supported cluster versions. Our product name in the masthead is **Authoring Console**. The same interface serves KIND, Kubernetes and OpenShift. [OpenShift web console](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html-single/web_console/index) · [Implementation plan](PLAN.md)
 
+## Workflows visual reference
+
+The first design pass follows the OpenShift Console 4.20 source at commit `ebb46520cea63af4df31b5ff63735ea7eda91de1`. Its list header pairs the resource title with the primary action. Deployment Details places a section heading above a responsive grid of resource attributes. In Authoring Console, the list action is **Create workflow**. The version page keeps **Run this version** beside its identity, with workflow metadata and runtime binding below the tabs. The namespace on version pages comes from the selected version. [OpenShift list header](https://github.com/openshift/console/blob/ebb46520cea63af4df31b5ff63735ea7eda91de1/frontend/public/components/factory/ListPage/ListPageHeader.tsx) · [Deployment details](https://github.com/openshift/console/blob/ebb46520cea63af4df31b5ff63735ea7eda91de1/frontend/public/components/deployment.tsx)
+
+These captures show our fixture-backed console at 1440 × 900. Review the expanded family and the selected version together.
+
+| Screen | First iteration | Design pass |
+| --- | --- | --- |
+| Workflows | [Before](docs/design/workflows-before.png) | [After](docs/design/workflows-after.png) |
+| Workflow version | [Before](docs/design/version-before.png) | [After](docs/design/version-after.png) |
+
 ## The shell
 
 Use one navigation tree for administrators and workflow authors. OpenShift’s unified navigation, resource lists, detail tabs and project selector are the conventions to carry over. Use **Namespace** throughout this console so the same instructions work on every cluster. The application owns its name and navigation. An embedded Operational Console view takes its surrounding shell from its host.

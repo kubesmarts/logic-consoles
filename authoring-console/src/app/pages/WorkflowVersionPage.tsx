@@ -24,6 +24,11 @@ import {
   EmptyState,
   EmptyStateBody,
   Label,
+  Flex,
+  Grid,
+  GridItem,
+  Stack,
+  StackItem,
   MenuToggle,
   PageSection,
   Spinner,
@@ -36,6 +41,7 @@ import { stringify as stringifyYaml } from "yaml";
 import { DiagramPreview } from "../../editors/DiagramPreview.tsx";
 import { YamlEditor } from "../../editors/YamlEditor.tsx";
 import { VersionHistory, VersionRunPanel } from "../../execution/VersionExecution.tsx";
+import { NamespaceBar } from "../shell/NamespaceBar.tsx";
 import { useNavigation } from "../ConsoleContext.tsx";
 import { useWorkflowCr, useWorkflowFamilies, useWorkflowFlow } from "../queries.ts";
 import type { WorkflowVersionKey } from "../../contracts/index.ts";
@@ -107,72 +113,85 @@ export const WorkflowVersionPage = (): ReactNode => {
 
   return (
     <>
-      <PageSection>
-        <Breadcrumb>
-          <BreadcrumbItem to="#/workflows">Workflows</BreadcrumbItem>
-          <BreadcrumbItem>{workflowName}</BreadcrumbItem>
-          <BreadcrumbItem isActive>{version}</BreadcrumbItem>
-        </Breadcrumb>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <Title headingLevel="h1">
-              {workflowName} <Label color="blue">{version}</Label>
-            </Title>
-            <Content component="p">Runtime {row.runtimeName || "—"}</Content>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <Button variant="primary" onClick={handleRunWorkflow}>
-              Run this version
-            </Button>
-            <Dropdown
-              isOpen={actionsOpen}
-              onOpenChange={setActionsOpen}
-              toggle={(toggleRef) => (
-                <MenuToggle
-                  ref={toggleRef}
-                  onClick={() => setActionsOpen(!actionsOpen)}
-                >
-                  Actions
-                </MenuToggle>
-              )}
-            >
-              <DropdownList>
-                <DropdownItem key="create" onClick={() => openPublish("create")}>
-                  Publish new version
-                </DropdownItem>
-                <DropdownItem key="update" onClick={() => openPublish("update")}>
-                  Update this version
-                </DropdownItem>
-              </DropdownList>
-            </Dropdown>
-          </div>
-        </div>
+      <NamespaceBar namespace={namespace} />
+      <PageSection isFilled={false}>
+        <Stack hasGutter>
+          <Breadcrumb>
+            <BreadcrumbItem to="#/workflows">Workflows</BreadcrumbItem>
+            <BreadcrumbItem>{workflowName}</BreadcrumbItem>
+            <BreadcrumbItem isActive>{version}</BreadcrumbItem>
+          </Breadcrumb>
+          <Flex alignItems={{ default: "alignItemsCenter" }} justifyContent={{ default: "justifyContentSpaceBetween" }}>
+            <div>
+              <Title headingLevel="h1">
+                {workflowName} <Label color="blue">{version}</Label>
+              </Title>
+            </div>
+            <Flex spaceItems={{ default: "spaceItemsSm" }}>
+              <Button variant="primary" onClick={handleRunWorkflow}>
+                Run this version
+              </Button>
+              <Dropdown
+                isOpen={actionsOpen}
+                onOpenChange={setActionsOpen}
+                toggle={(toggleRef) => (
+                  <MenuToggle
+                    ref={toggleRef}
+                    onClick={() => setActionsOpen(!actionsOpen)}
+                  >
+                    Actions
+                  </MenuToggle>
+                )}
+              >
+                <DropdownList>
+                  <DropdownItem key="create" onClick={() => openPublish("create")}>
+                    Publish new version
+                  </DropdownItem>
+                  <DropdownItem key="update" onClick={() => openPublish("update")}>
+                    Update this version
+                  </DropdownItem>
+                </DropdownList>
+              </Dropdown>
+            </Flex>
+          </Flex>
+        </Stack>
       </PageSection>
       <PageSection>
         <Tabs activeKey={activeTab} onSelect={(_event, key) => setActiveTab(String(key))}>
           <Tab eventKey="details" title={<TabTitleText>Details</TabTitleText>}>
-            <DescriptionList isHorizontal>
-              <DescriptionListGroup>
-                <DescriptionListTerm>Workflow name</DescriptionListTerm>
-                <DescriptionListDescription>{workflowName}</DescriptionListDescription>
-              </DescriptionListGroup>
-              <DescriptionListGroup>
-                <DescriptionListTerm>Version</DescriptionListTerm>
-                <DescriptionListDescription>{version}</DescriptionListDescription>
-              </DescriptionListGroup>
-              <DescriptionListGroup>
-                <DescriptionListTerm>Namespace</DescriptionListTerm>
-                <DescriptionListDescription>{namespace}</DescriptionListDescription>
-              </DescriptionListGroup>
-              <DescriptionListGroup>
-                <DescriptionListTerm>Runtime</DescriptionListTerm>
-                <DescriptionListDescription>{row.runtimeName || "—"}</DescriptionListDescription>
-              </DescriptionListGroup>
-              <DescriptionListGroup>
-                <DescriptionListTerm>Definition (CR name)</DescriptionListTerm>
-                <DescriptionListDescription data-testid="cr-name">{row.crName ?? "Unresolved"}</DescriptionListDescription>
-              </DescriptionListGroup>
-            </DescriptionList>
+            <Stack hasGutter style={{ paddingBlockStart: "var(--pf-t--global--spacer--lg)" }}>
+              <StackItem><Title headingLevel="h2" size="xl">Workflow details</Title></StackItem>
+              <Grid hasGutter>
+                <GridItem md={6}>
+                  <DescriptionList>
+                    <DescriptionListGroup>
+                      <DescriptionListTerm>Workflow name</DescriptionListTerm>
+                      <DescriptionListDescription>{workflowName}</DescriptionListDescription>
+                    </DescriptionListGroup>
+                    <DescriptionListGroup>
+                      <DescriptionListTerm>Version</DescriptionListTerm>
+                      <DescriptionListDescription>{version}</DescriptionListDescription>
+                    </DescriptionListGroup>
+                    <DescriptionListGroup>
+                      <DescriptionListTerm>Namespace</DescriptionListTerm>
+                      <DescriptionListDescription>{namespace}</DescriptionListDescription>
+                    </DescriptionListGroup>
+                  </DescriptionList>
+                </GridItem>
+                <GridItem md={6}>
+                  <DescriptionList>
+                    <DescriptionListGroup>
+                      <DescriptionListTerm>Runtime</DescriptionListTerm>
+                      <DescriptionListDescription>{row.runtimeName || "—"}</DescriptionListDescription>
+                    </DescriptionListGroup>
+                    <DescriptionListGroup>
+                      <DescriptionListTerm>Definition (CR name)</DescriptionListTerm>
+                      <DescriptionListDescription data-testid="cr-name">{row.crName ?? "Unresolved"}</DescriptionListDescription>
+                    </DescriptionListGroup>
+                  </DescriptionList>
+                </GridItem>
+              </Grid>
+            </Stack>
           </Tab>
           <Tab eventKey="diagram" title={<TabTitleText>Diagram</TabTitleText>}>
             {/* React Flow measures its viewport on mount. Inactive tab panels have no dimensions. */}
