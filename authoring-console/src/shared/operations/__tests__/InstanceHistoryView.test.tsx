@@ -85,7 +85,7 @@ describe("InstanceHistoryView", () => {
 
   it("keeps an accepted receipt pending until indexing, then offers actions on the matching detail", async () => {
     const user = userEvent.setup();
-    const instance = instanceFixtures[0]!;
+    const instance = { ...instanceFixtures[0]!, status: "RUNNING" };
     const getInstance = vi.fn().mockRejectedValueOnce(new Error("Not indexed")).mockResolvedValue(instance);
     const listInstances = vi.fn().mockResolvedValueOnce([]).mockResolvedValue([instance]);
     const gateway = createMockGateway({ listInstances, getInstance });
@@ -99,6 +99,18 @@ describe("InstanceHistoryView", () => {
     await user.click(await screen.findByRole("button", { name: "Refresh selected" }));
     expect(action).toHaveBeenCalledWith(instance.id);
     expect(getInstance).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(["COMPLETED", "FAULTED", "CANCELLED", "ABORTED"])("shows %s details without lifecycle actions", async (status) => {
+    const instance = { ...instanceFixtures[0]!, status };
+    const gateway = createMockGateway({ getInstance: vi.fn().mockResolvedValue(instance) });
+    const renderActions = vi.fn(() => <button>Change instance</button>);
+    render(<QueryClientProvider client={queryClient}>
+      <InstanceHistoryView versionKey={versionKey} gateway={gateway} acceptedId={instance.id} renderActions={renderActions} />
+    </QueryClientProvider>);
+    const details = await screen.findByLabelText("Instance details");
+    expect(within(details).getByText(status)).toBeVisible();
+    expect(renderActions).not.toHaveBeenCalled();
   });
 
   it("renders instances table with correct columns", async () => {

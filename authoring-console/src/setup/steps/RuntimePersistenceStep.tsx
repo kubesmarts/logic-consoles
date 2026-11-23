@@ -1,7 +1,7 @@
 import { Checkbox, Content, Form, FormGroup, FormHelperText, HelperText, HelperTextItem, TextInput } from "@patternfly/react-core";
 import type { RuntimeDatastore, RuntimePersistence } from "../types.ts";
 
-const emptyStore = (): RuntimeDatastore => ({ postgresql: { secretRef: { name: "" }, serviceRef: { name: "" } } });
+const emptyStore = (): RuntimeDatastore => ({ postgresql: { secretRef: { name: "" }, serviceRef: { name: "", databaseName: "logicflow" } } });
 
 function FieldHelp({ id, children }: { id: string; children: string }) {
   return <FormHelperText><HelperText id={id}><HelperTextItem>{children}</HelperTextItem></HelperText></FormHelperText>;

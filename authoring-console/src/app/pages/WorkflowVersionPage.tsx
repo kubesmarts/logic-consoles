@@ -211,5 +211,5 @@ const YamlTab = ({
   });
   if (cr.isPending) return <Spinner aria-label="Loading YAML" />;
   if (cr.isError || !cr.data) return <Content component="p">CR unavailable.</Content>;
-  return <YamlEditor value={stringifyYaml(cr.data)} ariaLabel="Full definition CR YAML" readOnly />;
+  return <YamlEditor value={stringifyYaml(cr.data)} ariaLabel="Full definition CR YAML" foldManagedFields readOnly />;
 };

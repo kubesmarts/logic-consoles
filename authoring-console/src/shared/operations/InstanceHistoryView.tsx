@@ -15,6 +15,7 @@ import {
   Button,
   Bullseye,
   Drawer,
+  DrawerActions,
   DrawerCloseButton,
   DrawerContent,
   DrawerContentBody,
@@ -44,6 +45,8 @@ interface InstanceHistoryState {
   readonly selectedInstanceId: string | null;
   readonly retrying: boolean;
 }
+
+const terminalStatuses = new Set(["COMPLETED", "FAULTED", "CANCELLED", "ABORTED"]);
 
 export const InstanceHistoryView = ({ versionKey, gateway, sessionId, acceptedId, renderActions }: InstanceHistoryViewProps): ReactNode => {
   const [viewState, setViewState] = useState<InstanceHistoryState>({
@@ -163,7 +166,8 @@ export const InstanceHistoryView = ({ versionKey, gateway, sessionId, acceptedId
                 onClose={handleDrawerClose}
                 actions={detailQuery.data && detailQuery.data.id === viewState.selectedInstanceId &&
                   detailQuery.data.name === versionKey.workflowName && detailQuery.data.namespace === versionKey.namespace &&
-                  detailQuery.data.version === versionKey.version && renderActions?.(detailQuery.data, () => {
+                  detailQuery.data.version === versionKey.version &&
+                  !terminalStatuses.has(detailQuery.data.status.toUpperCase()) && renderActions?.(detailQuery.data, () => {
                     void detailQuery.refetch();
                     void query.refetch();
                   })}
@@ -190,7 +194,7 @@ const InstanceDetailDrawer = ({ instanceId, detailQuery, onClose, actions }: Ins
     <DrawerPanelContent isResizable>
       <DrawerHead>
         <span>Instance {instanceId.substring(0, 8)}...</span>
-        <DrawerCloseButton onClick={onClose} />
+        <DrawerActions><DrawerCloseButton onClick={onClose} /></DrawerActions>
       </DrawerHead>
       <DrawerContentBody>
         {detailQuery.isPending ? (

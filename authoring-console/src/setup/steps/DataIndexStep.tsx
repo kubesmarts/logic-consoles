@@ -26,8 +26,8 @@ export const DataIndexStep = ({ draft, onUpdate }: DataIndexStepProps): ReactNod
     postgresqlSecretName: "",
     postgresqlServiceName: "",
     postgresqlServiceNamespace: "",
-    databaseName: "",
-    databaseSchema: "",
+    databaseName: "logicflow",
+    databaseSchema: "data_index",
   };
 
   const handleUpdate = (updates: Partial<DataIndexConfig>): void => {
@@ -102,7 +102,7 @@ export const DataIndexStep = ({ draft, onUpdate }: DataIndexStepProps): ReactNod
         <Content component="h3" style={{ marginBottom: "1rem" }}>
           Database
         </Content>
-        <FormGroup label="Database name" fieldId="pg-db">
+        <FormGroup label="Database name" isRequired fieldId="pg-db">
           <TextInput
             value={dataIndex.databaseName || ""}
             onChange={(_event, value) => handleUpdate({ databaseName: value })}
@@ -116,7 +116,7 @@ export const DataIndexStep = ({ draft, onUpdate }: DataIndexStepProps): ReactNod
           </FormHelperText>
         </FormGroup>
 
-        <FormGroup label="Database schema" fieldId="pg-schema">
+        <FormGroup label="Database schema" isRequired fieldId="pg-schema">
           <TextInput
             value={dataIndex.databaseSchema || ""}
             onChange={(_event, value) => handleUpdate({ databaseSchema: value })}

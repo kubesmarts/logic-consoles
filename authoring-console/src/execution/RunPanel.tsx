@@ -15,6 +15,7 @@ import {
   CardTitle,
   Content,
   Drawer,
+  DrawerActions,
   DrawerCloseButton,
   DrawerContent,
   DrawerContentBody,
@@ -157,7 +158,7 @@ export const RunPanel = ({ definition, flow, gateway, isOpen, onClose, historyEn
     <DrawerPanelContent isResizable minSize="400px" defaultSize="600px">
       <DrawerHead>
         <Title headingLevel="h2">Run workflow</Title>
-        <DrawerCloseButton onClick={onClose} />
+        <DrawerActions><DrawerCloseButton onClick={onClose} /></DrawerActions>
       </DrawerHead>
       <DrawerContentBody>
         <div style={{ padding: "1rem" }}>

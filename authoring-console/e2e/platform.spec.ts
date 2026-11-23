@@ -4,7 +4,11 @@ import { openLauncher } from "./connection";
 test("an admin can open platform setup and switch between both setup paths", async ({ page }) => {
   await page.route("**/api/k8s/list", route => route.fulfill({ json: { items: [], metadata: {} } }));
   await page.route("**/api/k8s/write", route => {
-    expect(route.request().postDataJSON().object.kind).toBe("SelfSubjectAccessReview");
+    const { object, dryRun } = route.request().postDataJSON();
+    if (object.kind === "ClusterLogicPlatform" && dryRun) {
+      return route.fulfill({ json: object });
+    }
+    expect(object.kind).toBe("SelfSubjectAccessReview");
     return route.fulfill({ json: { status: { allowed: true } } });
   });
   await openLauncher(page, "/platform");
@@ -21,5 +25,13 @@ test("an admin can open platform setup and switch between both setup paths", asy
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await page.getByLabel("Run a workflow and see its history").check();
   await next.click();
-  await expect(page.getByLabel("PostgreSQL Secret name")).toBeVisible();
+  await page.getByRole("textbox", { name: "PostgreSQL Secret name" }).fill("pg-user");
+  await page.getByRole("textbox", { name: "Service name", exact: true }).fill("postgres");
+  await expect(page.getByRole("textbox", { name: "Database name" })).toHaveValue("logicflow");
+  await page.getByRole("button", { name: "Review", exact: true }).click();
+  const admission = page.waitForRequest(request =>
+    request.url().endsWith("/api/k8s/write") && request.postDataJSON().dryRun === true);
+  await page.getByRole("button", { name: "Dry Run", exact: true }).click();
+  expect((await admission).postDataJSON().object.spec.dataIndex.persistence.postgresql.serviceRef)
+    .toMatchObject({ name: "postgres", databaseName: "logicflow", databaseSchema: "data_index" });
 });

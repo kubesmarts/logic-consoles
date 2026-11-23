@@ -26,6 +26,8 @@ import { VectorStep } from "./steps/VectorStep.tsx";
 import { GatewayStep } from "./steps/GatewayStep.tsx";
 import { ReviewStep } from "./steps/ReviewStep.tsx";
 
+import { ReviewNavigation } from "./ReviewNavigation.tsx";
+
 interface PlatformSetupWizardProps {
   readonly onComplete?: () => void;
   readonly onCancel?: () => void;
@@ -217,7 +219,7 @@ function PlatformForm({ existingPlatform, canCreateNamespace, editMode, onComple
       <WizardStep name="Runtime persistence" id="runtime-persistence">
         <RuntimePersistenceStep value={draft.runtimePersistence} change={runtimePersistence => handleDraftUpdate({ runtimePersistence })} />
       </WizardStep>
-      <WizardStep name="Review" id="review">
+      <WizardStep name="Review" id="review" footer={<ReviewNavigation />}>
         <ReviewStep
           draft={draft}
           onComplete={onComplete}

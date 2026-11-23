@@ -8,7 +8,7 @@
  * selection/drawer behaviour belongs to the shared operational views packet (F).
  */
 import { useMemo, type ReactNode } from "react";
-import { Background, Controls, ReactFlow, type Edge, type Node } from "@xyflow/react";
+import { Background, Controls, MarkerType, ReactFlow, type Edge, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { TopologyGraph } from "../contracts/index.ts";
 import { useTheme } from "../app/theme.tsx";
@@ -36,7 +36,7 @@ export const TopologyCanvas = ({ graph, onNodeSelect }: TopologyCanvasProps): Re
   );
 
   const edges = useMemo<Edge[]>(
-    () => graph.edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target, label: edge.type })),
+    () => graph.edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target, label: edge.type, markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 } })),
     [graph.edges],
   );
 

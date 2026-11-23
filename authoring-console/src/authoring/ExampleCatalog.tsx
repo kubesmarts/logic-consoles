@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import {
   Card,
   CardBody,
+  CardHeader,
   CardTitle,
   Content,
   Label,
@@ -36,8 +37,10 @@ const ExampleCard = ({
   readonly example: WorkflowExample;
   readonly onSelect: () => void;
 }): ReactNode => (
-  <Card isClickable onClick={onSelect}>
-    <CardTitle>{example.title}</CardTitle>
+  <Card isClickable>
+    <CardHeader selectableActions={{onClickAction: onSelect, selectableActionAriaLabel: `Use ${example.title}`}}>
+      <CardTitle>{example.title}</CardTitle>
+    </CardHeader>
     <CardBody>
       <Content component="p" style={{ marginBottom: "0.5rem" }}>
         {example.description}
@@ -65,7 +68,7 @@ const ExampleCard = ({
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            style={{ marginRight: "1rem" }}
+            style={{ marginRight: "1rem", position: "relative", zIndex: 1 }}
           >
             Source <ExternalLinkAltIcon />
           </a>

@@ -11,8 +11,8 @@ import {
   Card,
   CardBody,
   PageSection,
-  Split,
-  SplitItem,
+  Grid,
+  GridItem,
   Tab,
   TabContent,
   Tabs,
@@ -154,10 +154,10 @@ export const WorkflowEditor = ({
   // Wide screen: side-by-side
   return (
     <PageSection>
-      <Split hasGutter>
-        <SplitItem isFilled>{editorSection}</SplitItem>
-        <SplitItem isFilled>{previewSection}</SplitItem>
-      </Split>
+      <Grid hasGutter>
+        <GridItem span={6} style={{minWidth: 0}}>{editorSection}</GridItem>
+        <GridItem span={6} style={{minWidth: 0}}>{previewSection}</GridItem>
+      </Grid>
     </PageSection>
   );
 };

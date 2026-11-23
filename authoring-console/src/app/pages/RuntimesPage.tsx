@@ -10,11 +10,17 @@ import {
   Alert,
   Bullseye,
   Button,
+  DescriptionList,
+  DescriptionListDescription,
+  DescriptionListGroup,
+  DescriptionListTerm,
   EmptyState,
   EmptyStateBody,
   Form,
   FormGroup,
   Modal,
+  ModalBody,
+  ModalHeader,
   ModalVariant,
   PageSection,
   Spinner,
@@ -25,6 +31,8 @@ import {
   ToolbarItem,
 } from "@patternfly/react-core";
 import { Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
+import { stringify } from "yaml";
+import { YamlEditor } from "../../editors/YamlEditor.tsx";
 import { NamespaceBar } from "../shell/NamespaceBar.tsx";
 import { useConsole } from "../ConsoleContext.tsx";
 import {
@@ -238,82 +246,62 @@ export const RuntimesPage = (): ReactNode => {
         variant={ModalVariant.large}
         isOpen={showWizard}
         onClose={handleWizardCancel}
-        aria-label={editing ? "Edit runtime persistence" : "Create runtime wizard"}
+        aria-labelledby="runtime-wizard-title"
       >
-        <RuntimeSetupWizard key={editing?.metadata.uid ?? editing?.metadata.name ?? "create"} editing={editing} onComplete={handleWizardComplete} onCancel={handleWizardCancel} />
+        <ModalHeader labelId="runtime-wizard-title" title={editing ? "Edit runtime persistence" : "Create runtime"} />
+        <ModalBody>
+          <RuntimeSetupWizard key={editing?.metadata.uid ?? editing?.metadata.name ?? "create"} editing={editing} onComplete={handleWizardComplete} onCancel={handleWizardCancel} />
+        </ModalBody>
       </Modal>
 
-      {/* Details modal */}
-      {selectedRuntime && !showYaml && (
+      {selectedRuntime && (
         <Modal
-          variant={ModalVariant.medium}
-          title={`Runtime: ${selectedRuntime.metadata.name}`}
-          isOpen={true}
+          variant={showYaml ? ModalVariant.large : ModalVariant.medium}
+          isOpen
           onClose={handleCloseDetails}
-          aria-label="Runtime details"
+          aria-labelledby="runtime-dialog-title"
         >
-          <dl>
-            <dt>
-              <strong>Name:</strong>
-            </dt>
-            <dd>{selectedRuntime.metadata.name}</dd>
-            <dt style={{ marginTop: "0.5rem" }}>
-              <strong>Namespace:</strong>
-            </dt>
-            <dd>{selectedRuntime.metadata.namespace}</dd>
-            <dt style={{ marginTop: "0.5rem" }}>
-              <strong>Persistence mode:</strong>
-            </dt>
-            <dd>{selectedRuntime.spec?.persistenceMode ?? DEFAULT_PERSISTENCE_MODE}</dd>
-            <dt style={{ marginTop: "0.5rem" }}>
-              <strong>Ready replicas:</strong>
-            </dt>
-            <dd>
-              {selectedRuntime.status?.readyReplicas ?? 0} / {selectedRuntime.status?.replicas ?? 0}
-            </dd>
-            <dt style={{ marginTop: "0.5rem" }}>
-              <strong>Status:</strong>
-            </dt>
-            <dd>{selectedRuntime.status?.phase ?? "Unknown"}</dd>
-            {selectedRuntime.status?.conditions && selectedRuntime.status.conditions.length > 0 && (
-              <>
-                <dt style={{ marginTop: "0.5rem" }}>
-                  <strong>Conditions:</strong>
-                </dt>
-                <dd>
-                  {selectedRuntime.status.conditions.map((cond, idx) => (
-                    <div key={idx} style={{ marginTop: "0.25rem" }}>
-                      {cond.type}: {cond.status}
-                      {cond.reason && ` (${cond.reason})`}
-                    </div>
-                  ))}
-                </dd>
-              </>
+          <ModalHeader
+            labelId="runtime-dialog-title"
+            title={`${showYaml ? "Runtime YAML" : "Runtime details"} — ${selectedRuntime.metadata.name}`}
+          />
+          <ModalBody>
+            {showYaml ? (
+              <YamlEditor
+                ariaLabel={`YAML for runtime ${selectedRuntime.metadata.name}`}
+                value={stringify(selectedRuntime, { lineWidth: 0 })}
+                height="min(60vh, 40rem)"
+                foldManagedFields
+              />
+            ) : (
+              <DescriptionList isHorizontal>
+                {[
+                  ["Name", selectedRuntime.metadata.name],
+                  ["Namespace", selectedRuntime.metadata.namespace],
+                  ["Persistence mode", selectedRuntime.spec?.persistenceMode ?? DEFAULT_PERSISTENCE_MODE],
+                  ["Ready replicas", `${selectedRuntime.status?.readyReplicas ?? 0} / ${selectedRuntime.status?.replicas ?? 0}`],
+                  ["Status", selectedRuntime.status?.phase ?? "Unknown"],
+                ].map(([label, value]) => (
+                  <DescriptionListGroup key={label}>
+                    <DescriptionListTerm>{label}</DescriptionListTerm>
+                    <DescriptionListDescription>{value}</DescriptionListDescription>
+                  </DescriptionListGroup>
+                ))}
+                {!!selectedRuntime.status?.conditions?.length && (
+                  <DescriptionListGroup>
+                    <DescriptionListTerm>Conditions</DescriptionListTerm>
+                    <DescriptionListDescription>
+                      {selectedRuntime.status.conditions.map(cond => (
+                        <div key={cond.type}>
+                          {cond.type}: {cond.status}{cond.reason && ` (${cond.reason})`}
+                        </div>
+                      ))}
+                    </DescriptionListDescription>
+                  </DescriptionListGroup>
+                )}
+              </DescriptionList>
             )}
-          </dl>
-        </Modal>
-      )}
-
-      {/* YAML modal */}
-      {selectedRuntime && showYaml && (
-        <Modal
-          variant={ModalVariant.large}
-          title={`Runtime YAML: ${selectedRuntime.metadata.name}`}
-          isOpen={true}
-          onClose={handleCloseDetails}
-          aria-label="Runtime YAML"
-        >
-          <pre
-            style={{
-              backgroundColor: "#f5f5f5",
-              padding: "1rem",
-              borderRadius: "4px",
-              overflow: "auto",
-              maxHeight: "60vh",
-            }}
-          >
-            {JSON.stringify(selectedRuntime, null, 2)}
-          </pre>
+          </ModalBody>
         </Modal>
       )}
     </>

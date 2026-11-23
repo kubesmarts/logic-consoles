@@ -36,6 +36,8 @@ import { ReplicasAndLoggingStep } from "./steps/ReplicasAndLoggingStep.tsx";
 import { SecurityStep } from "./steps/SecurityStep.tsx";
 import { RuntimeReviewStep } from "./steps/RuntimeReviewStep.tsx";
 
+import { ReviewNavigation } from "../ReviewNavigation.tsx";
+
 interface RuntimeSetupWizardProps {
   readonly onComplete?: () => void;
   readonly onCancel?: () => void;
@@ -175,7 +177,7 @@ export const RuntimeSetupWizard = ({
           if (onComplete) onComplete();
         }}
       >
-        <WizardStep name="Select runtime" id="select-runtime">
+        <WizardStep name="Select runtime" id="select-runtime" footer={{ isNextDisabled: !selectedRuntime }}>
           <ModeSelectionStep
             draft={draft}
             onChange={handleDraftUpdate}
@@ -184,7 +186,7 @@ export const RuntimeSetupWizard = ({
           />
         </WizardStep>
         {draft.selectedRuntimeName && selectedRuntime && (
-          <WizardStep name="Confirm selection" id="confirm">
+          <WizardStep name="Confirm selection" id="confirm" footer={<ReviewNavigation />}>
             <RuntimeReviewStep
               draft={{
                 ...draft,
@@ -246,7 +248,7 @@ export const RuntimeSetupWizard = ({
         <SecurityStep draft={draft} onChange={handleDraftUpdate} />
       </WizardStep>
 
-      <WizardStep name="Review and submit" id="review">
+      <WizardStep name="Review and submit" id="review" footer={<ReviewNavigation />}>
         <RuntimeReviewStep
           draft={draft}
           onComplete={onComplete}

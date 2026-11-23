@@ -196,7 +196,7 @@ export const TargetNamespaceStep = ({
       </div>
 
       <Modal
-        title="Create namespace"
+        aria-labelledby="create-namespace-title"
         isOpen={showCreateModal}
         variant={ModalVariant.large}
         onClose={() => {
@@ -204,7 +204,7 @@ export const TargetNamespaceStep = ({
           setCreateError(null);
         }}
       >
-        <ModalHeader title="Create namespace" />
+        <ModalHeader labelId="create-namespace-title" title="Create namespace" />
         <ModalBody>
           <FormGroup label="Namespace name" isRequired fieldId="new-ns-name">
             <TextInput

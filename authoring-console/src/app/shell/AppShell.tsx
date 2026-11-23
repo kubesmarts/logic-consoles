@@ -3,7 +3,7 @@
  *
  * Masthead: nav toggle + product name "Authoring Console" at the start; the active
  * kubeconfig context (or "Disconnected") at the end. Sidebar nav in the required
- * order: Workflows, Topology, Runtimes, Platform, Compatibility. Single main landmark
+ * order: Platform, Runtimes, Workflows, Topology, Compatibility. Single main landmark
  * + skip link. Light/dark toggle. The routed content is supplied as children.
  */
 import type { ReactNode } from "react";
@@ -43,10 +43,10 @@ export interface NavEntry {
 
 /** Sidebar order is fixed by DESIGN.md. Packets B–H add routes, not reorder these. */
 export const PRIMARY_NAV: readonly NavEntry[] = [
+  { to: "/platform", label: "Platform" },
+  { to: "/runtimes", label: "Runtimes" },
   { to: "/workflows", label: "Workflows" },
   { to: "/topology", label: "Topology" },
-  { to: "/runtimes", label: "Runtimes" },
-  { to: "/platform", label: "Platform" },
   { to: "/compatibility", label: "Compatibility" },
 ];
 

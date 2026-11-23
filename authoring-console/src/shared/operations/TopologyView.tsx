@@ -14,6 +14,7 @@ import {
   Bullseye,
   Button,
   Drawer,
+  DrawerActions,
   DrawerCloseButton,
   DrawerContent,
   DrawerContentBody,
@@ -215,7 +216,7 @@ const DefinitionDrawer = ({ node, onClose, navigation, renderRunAction }: Defini
       <DrawerPanelContent isResizable>
         <DrawerHead>
           <span>{node.label}</span>
-          <DrawerCloseButton onClick={onClose} />
+          <DrawerActions><DrawerCloseButton onClick={onClose} /></DrawerActions>
         </DrawerHead>
       </DrawerPanelContent>
     );
@@ -245,7 +246,7 @@ const DefinitionDrawer = ({ node, onClose, navigation, renderRunAction }: Defini
     <DrawerPanelContent isResizable>
       <DrawerHead>
         <span>{node.label}</span>
-        <DrawerCloseButton onClick={onClose} />
+        <DrawerActions><DrawerCloseButton onClick={onClose} /></DrawerActions>
       </DrawerHead>
       <DrawerContentBody>
         <div style={{ padding: "1rem" }}>

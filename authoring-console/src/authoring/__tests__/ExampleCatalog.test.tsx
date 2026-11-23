@@ -47,10 +47,7 @@ describe("ExampleCatalog", () => {
     const onSelectExample = vi.fn();
     render(<ExampleCatalog isOpen={true} onClose={onClose} onSelectExample={onSelectExample} />);
 
-    const helloWorldCard = screen.getByText("Hello World").closest("[class*='pf-v6-c-card']");
-    expect(helloWorldCard).toBeInTheDocument();
-
-    await user.click(helloWorldCard!);
+    await user.click(screen.getByRole("button", {name: "Use Hello World"}));
 
     await waitFor(() => {
       expect(onSelectExample).toHaveBeenCalledWith(
