@@ -13,6 +13,11 @@ test("an admin can open platform setup and switch between both setup paths", asy
   });
   await openLauncher(page, "/platform");
   await page.getByRole("button", { name: "Set up platform" }).click();
+  const review = page.getByRole("button", { name: "Review", exact: true });
+  await expect(review).toBeInViewport({ ratio: 1 });
+  await page.getByRole("button", { name: "Gateway", exact: true }).click();
+  await page.getByRole("button", { name: "Target namespace", exact: true }).click();
+  await expect(review).toBeInViewport({ ratio: 1 });
   await page.getByRole("tab", { name: "Create new" }).click();
   await expect(page.getByRole("button", { name: "Create namespace" })).toBeVisible();
   await page.getByRole("tab", { name: "Select existing" }).click();

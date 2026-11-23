@@ -39,14 +39,16 @@ export const PlatformPage = (): ReactNode => {
 
   if (showSetupWizard) {
     return (
-      <PlatformSetupWizard
-        editMode={Boolean(query.data)}
-        onComplete={() => {
-          setShowSetupWizard(false);
-          query.refetch();
-        }}
-        onCancel={() => setShowSetupWizard(false)}
-      />
+      <PageSection type="wizard" hasBodyWrapper={false}>
+        <PlatformSetupWizard
+          editMode={Boolean(query.data)}
+          onComplete={() => {
+            setShowSetupWizard(false);
+            query.refetch();
+          }}
+          onCancel={() => setShowSetupWizard(false)}
+        />
+      </PageSection>
     );
   }
 
