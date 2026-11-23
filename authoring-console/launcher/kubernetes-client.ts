@@ -11,6 +11,7 @@ export interface K8sClientContext {
   readonly kc: k8s.KubeConfig;
   readonly coreApi: k8s.CoreV1Api;
   readonly customApi: k8s.CustomObjectsApi;
+  readonly authApi: k8s.AuthorizationV1Api;
   readonly currentContext: string;
 }
 
@@ -20,6 +21,7 @@ export const createK8sClient = (contextName?: string): K8sClientContext => {
   kc.loadFromDefault();
 
   if (contextName) {
+    if (!kc.getContextObject(contextName)) throw new Error("Unknown kubeconfig context");
     kc.setCurrentContext(contextName);
   }
 
@@ -34,6 +36,7 @@ export const createK8sClient = (contextName?: string): K8sClientContext => {
   return {
     kc,
     coreApi,
+    authApi: kc.makeApiClient(k8s.AuthorizationV1Api),
     customApi,
     currentContext,
   };
@@ -84,33 +87,3 @@ export const getClusterDisplay = (kc: k8s.KubeConfig): string => {
   }
 };
 
-/**
- * Map @kubernetes/client-node errors to our error taxonomy.
- * The library throws objects with statusCode/body/response properties.
- */
-export interface K8sError {
-  statusCode?: number;
-  body?: unknown;
-  response?: {
-    statusCode?: number;
-    body?: unknown;
-  };
-}
-
-export const isK8sError = (error: unknown): error is K8sError => {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    ("statusCode" in error || ("response" in error && typeof (error as K8sError).response === "object"))
-  );
-};
-
-/** Extract HTTP status code from K8s client error. */
-export const getK8sErrorStatus = (error: K8sError): number | undefined => {
-  return error.statusCode ?? error.response?.statusCode;
-};
-
-/** Extract error body from K8s client error. */
-export const getK8sErrorBody = (error: K8sError): unknown => {
-  return error.body ?? error.response?.body;
-};

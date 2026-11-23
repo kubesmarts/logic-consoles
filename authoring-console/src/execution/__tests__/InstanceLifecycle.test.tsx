@@ -187,7 +187,7 @@ describe("InstanceLifecycle", () => {
     await user.click(suspendButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/Network error/i)).toBeInTheDocument();
+      expect(screen.getByText(/outcome is unknown/i)).toBeInTheDocument();
     });
   });
 

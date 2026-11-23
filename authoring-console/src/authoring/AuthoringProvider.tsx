@@ -12,7 +12,7 @@ import type { AuthoringContextValue, ParsedWorkflowIdentity } from "./types.ts";
 import { useConsole } from "../app/ConsoleContext.tsx";
 
 const BLANK_WORKFLOW_TEMPLATE = `document:
-  dsl: '1.0.0'
+  dsl: '1.1.0'
   namespace: default
   name: my-workflow
   version: '1.0.0'

@@ -36,7 +36,8 @@ import {
 import { stringify as stringifyYaml } from "yaml";
 import { useAuthoringContext, useAuthoringState } from "../AuthoringProvider.tsx";
 import { useConsole } from "../../app/ConsoleContext.tsx";
-import { useWorkflowFamilies } from "../../app/queries.ts";
+import { isKubernetesWriteRejection, OperatorLabels } from "../../contracts/index.ts";
+import { operationLink } from "../../execution/operation-link.ts";
 import { ResourceEditor } from "../../resource-editor/ResourceEditor.tsx";
 import {
   buildPublishCandidate,
@@ -56,7 +57,7 @@ import type {
 } from "../../contracts/index.ts";
 
 type WizardStep = "configure" | "review" | "post-submit";
-type PostSubmitState = "submitted" | "reconciling" | "reconciled" | "gateway-discovering" | "ready";
+type PostSubmitState = "submitted" | "reconciling" | "reconciled" | "gateway-discovering" | "gateway-pending" | "ready";
 
 const MAX_GATEWAY_POLL_ATTEMPTS = 10;
 const GATEWAY_POLL_INTERVAL_MS = 2000;
@@ -83,52 +84,69 @@ export const PublishWizard = (): ReactNode => {
   const [deployedVersionKey, setDeployedVersionKey] = useState<WorkflowVersionKey | null>(null);
   const [gatewayDefinition, setGatewayDefinition] = useState<DefinitionResource | null>(null);
 
-  // Load families to get suggested version and check for existing runtime
-  const families = useWorkflowFamilies();
-  const family = families.data?.find(
-    (f) =>
-      f.key.namespace === namespace &&
-      f.key.workflowName === parsedIdentity?.workflowName,
-  );
+  const sourceMode = searchParams.get("mode");
+  const sourceNamespace = searchParams.get("namespace");
+  const sourceName = searchParams.get("workflowName");
+  const sourceVersion = searchParams.get("version");
+  const sourceKey = sourceMode && sourceNamespace && sourceName && sourceVersion ? searchParams.toString() : "";
+  const [loadedSource, setLoadedSource] = useState("");
+  const sourcePending = loadedSource !== sourceKey;
+
+  const workflowName = parsedIdentity?.workflowName;
+  const familyQuery = useQuery({
+    queryKey: [session.sessionId, session.context.contextName, "publish-family", namespace, workflowName],
+    enabled: !sourcePending && Boolean(namespace && workflowName),
+    queryFn: async ({signal}) => {
+      const list = await kubernetes.list<LogicFlowDefinitionSpec>(DEFINITION_GVK, {
+        namespace, labelSelector: `${OperatorLabels.workflowName}=${workflowName}`,
+      }, signal);
+      if (!list.items.length) return null;
+      const runtimes = new Set(list.items.map(item => item.spec?.runtimeRef.name));
+      if (runtimes.size !== 1 || runtimes.has(undefined)) throw new Error("The family has inconsistent runtime references.");
+      return {
+        runtimeName: list.items[0]?.spec?.runtimeRef.name,
+        versions: list.items.flatMap(item => item.metadata.labels?.[OperatorLabels.workflowVersion] ?? []),
+      };
+    },
+  });
+  const family = familyQuery.data;
 
   // Load runtimes in the selected namespace
   const runtimes = useRuntimes(kubernetes, session.sessionId, namespace);
 
-  // Initialize from query params (for update-entry integration)
+  // Load the selected CR by label identity before enabling review. A failed
+  // lookup must never offer the blank template as an update to a deployed CR.
   useEffect(() => {
-    const modeParam = searchParams.get("mode");
-    const nsParam = searchParams.get("namespace");
-    const nameParam = searchParams.get("workflowName");
-    const versionParam = searchParams.get("version");
-
-    if (modeParam === "update" && nsParam && nameParam && versionParam) {
-      setMode("update");
-      setNamespace(nsParam);
-      setVersion(versionParam);
-
-      // Load deployed workflow YAML and seed authoring context
-      const loadDeployedWorkflow = async () => {
-        try {
-          const resolution = await resolveWorkflowVersion(
-            kubernetes,
-            { namespace: nsParam, workflowName: nameParam, version: versionParam },
-          );
-          if (resolution.kind === "unambiguous") {
-            const cr = await kubernetes.get<LogicFlowDefinitionSpec, LogicFlowDefinitionStatus>(
-              resolution.resolution.resource,
-            );
-            const flowYaml = stringifyYaml(cr.spec?.flow);
-            setWorkflowYaml(flowYaml);
-            setOriginalYaml(flowYaml);
-          }
-        } catch (err) {
-          setError(`Failed to load deployed workflow: ${String(err)}`);
+    if (!sourceKey || !sourceNamespace || !sourceName || !sourceVersion) return;
+    const controller = new AbortController();
+    const key = {namespace:sourceNamespace, workflowName:sourceName, version:sourceVersion};
+    setLoadedSource("");
+    setError(null);
+    setMode(sourceMode === "update" ? "update" : "create");
+    setNamespace(sourceNamespace);
+    setVersion(sourceMode === "update" ? sourceVersion : "");
+    void (async () => {
+      try {
+        const resolution = await resolveWorkflowVersion(kubernetes, key, controller.signal);
+        if (resolution.kind !== "unambiguous") {
+          throw new Error(resolution.kind === "ambiguous" ? "Multiple definitions claim this version." : "The selected definition no longer exists.");
         }
-      };
-
-      void loadDeployedWorkflow();
-    }
-  }, [searchParams, kubernetes, setWorkflowYaml, setOriginalYaml]);
+        const cr = await kubernetes.get<LogicFlowDefinitionSpec>(resolution.resolution.resource, controller.signal);
+        if (controller.signal.aborted) return;
+        const flow = cr.spec?.flow;
+        if (flow?.document.name !== key.workflowName || flow.document.version !== key.version) {
+          throw new Error("The deployed document no longer matches the selected version.");
+        }
+        const yaml = stringifyYaml(flow);
+        setWorkflowYaml(yaml);
+        setOriginalYaml(yaml);
+        setLoadedSource(sourceKey);
+      } catch (cause) {
+        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Could not load the selected workflow.");
+      }
+    })();
+    return () => controller.abort();
+  }, [sourceKey, sourceMode, sourceNamespace, sourceName, sourceVersion, kubernetes, setWorkflowYaml, setOriginalYaml]);
 
   // Initialize namespace and suggested version
   useEffect(() => {
@@ -138,35 +156,36 @@ export const PublishWizard = (): ReactNode => {
   }, [parsedIdentity, namespace, searchParams]);
 
   useEffect(() => {
-    if (family && !version && !searchParams.has("version")) {
-      const existingVersions = family.versions.map((v) => v.version.version);
+    if (!familyQuery.isSuccess || sourcePending || (sourceKey && mode === "update")) return;
+    if (family && !version) {
+      const existingVersions = family.versions;
       const suggested = suggestNextVersion(existingVersions);
       setVersion(suggested);
-    } else if (!family && parsedIdentity && !version && !searchParams.has("version")) {
+    } else if (!family && parsedIdentity && !version) {
       setVersion(parsedIdentity.version);
     }
-  }, [family, parsedIdentity, version, searchParams]);
+  }, [family, familyQuery.isSuccess, parsedIdentity, version, sourcePending, sourceKey, mode]);
 
   // For subsequent versions, lock to family's runtime
   useEffect(() => {
-    if (family && family.runtimeName && !selectedRuntime) {
+    if (family?.runtimeName && family.runtimeName !== selectedRuntime) {
       setSelectedRuntime(family.runtimeName);
     }
   }, [family, selectedRuntime]);
 
   // Poll gateway catalog for routable state
   const gatewayPoll = useQuery({
-    queryKey: ["gateway-poll", deployedVersionKey?.namespace, deployedVersionKey?.workflowName, deployedVersionKey?.version],
-    queryFn: async () => {
+    queryKey: [session.sessionId, session.context.contextName, "gateway-poll", deployedVersionKey?.namespace, deployedVersionKey?.workflowName, deployedVersionKey?.version],
+    queryFn: async ({signal}) => {
       if (!deployedVersionKey) return null;
-      const catalog = await gateway.listDefinitions();
+      const catalog = await gateway.listDefinitions(signal);
       const entry = catalog.find(
         (d) =>
           d.namespace === deployedVersionKey.namespace &&
           d.name === deployedVersionKey.workflowName &&
           d.version === deployedVersionKey.version,
       );
-      return entry ?? null;
+      return entry && (operationLink(entry, "execute") || operationLink(entry, "executeSync")) ? entry : null;
     },
     enabled: postSubmitState === "gateway-discovering" && gatewayPollAttempts < MAX_GATEWAY_POLL_ATTEMPTS,
     refetchInterval: GATEWAY_POLL_INTERVAL_MS,
@@ -184,11 +203,10 @@ export const PublishWizard = (): ReactNode => {
     if (gatewayPoll.data && postSubmitState === "gateway-discovering") {
       setGatewayDefinition(gatewayPoll.data);
       setPostSubmitState("ready");
-    } else if (gatewayPollAttempts >= MAX_GATEWAY_POLL_ATTEMPTS && postSubmitState === "gateway-discovering") {
-      // Max attempts reached, still show ready but note gateway discovery may be pending
-      setPostSubmitState("ready");
+    } else if (!gatewayPoll.isFetching && gatewayPollAttempts >= MAX_GATEWAY_POLL_ATTEMPTS && postSubmitState === "gateway-discovering") {
+      setPostSubmitState("gateway-pending");
     }
-  }, [gatewayPoll.data, gatewayPollAttempts, postSubmitState]);
+  }, [gatewayPoll.data, gatewayPoll.isFetching, gatewayPollAttempts, postSubmitState]);
 
   const handlePreparePublish = useCallback(async () => {
     if (!parsedIdentity) {
@@ -259,8 +277,8 @@ export const PublishWizard = (): ReactNode => {
 
   const handleConflict = useCallback(() => {
     // On create conflict, suggest a different version
-    if (mode === "create" && family) {
-      const existingVersions = family.versions.map((v) => v.version.version);
+    if (mode === "create") {
+      const existingVersions = family?.versions ?? [];
       const suggested = suggestNextVersion([...existingVersions, version]);
       setVersion(suggested);
       setError(
@@ -274,43 +292,40 @@ export const PublishWizard = (): ReactNode => {
     }
   }, [mode, family, version]);
 
-  // Monitor reconciliation state
+  // Poll only while this published object is mounted. Both the request and
+  // scheduled follow-up are cancelled when the user changes route or session.
   useEffect(() => {
-    if (!submittedObject || postSubmitState !== "submitted") return;
-
-    const checkReconciliation = async () => {
+    if (!submittedObject) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function check() {
+      if (!submittedObject || controller.signal.aborted) return;
       try {
         const current = await kubernetes.get<LogicFlowDefinitionSpec, LogicFlowDefinitionStatus>({
-          gvk: DEFINITION_GVK,
-          name: submittedObject.metadata.name,
-          namespace: submittedObject.metadata.namespace,
-        });
-
-        const reconciled =
-          current.status?.observedGeneration !== undefined &&
-          current.metadata.generation !== undefined &&
-          current.status.observedGeneration === current.metadata.generation;
-
-        if (reconciled) {
-          setPostSubmitState("reconciled");
-          // Start gateway discovery
-          setTimeout(() => {
-            setPostSubmitState("gateway-discovering");
-          }, 500);
-        } else {
-          setPostSubmitState("reconciling");
-          // Poll again
-          setTimeout(checkReconciliation, 2000);
+          gvk: DEFINITION_GVK, name: submittedObject.metadata.name, namespace: submittedObject.metadata.namespace,
+        }, controller.signal);
+        if (controller.signal.aborted) return;
+        const generation = current.metadata.generation;
+        const ready = current.status?.conditions?.find(condition => condition.type === "Ready");
+        if (generation !== undefined && current.status?.observedGeneration === generation && ready?.status === "True") {
+          setPostSubmitState("gateway-discovering");
+          return;
         }
       } catch {
-        // If fetch fails, assume still reconciling and retry
-        setTimeout(checkReconciliation, 2000);
+        if (controller.signal.aborted) return;
       }
-    };
+      setPostSubmitState("reconciling");
+      timer = setTimeout(check, 2000);
+    }
+    timer = setTimeout(check, 1000);
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [submittedObject, kubernetes]);
 
-    // Start reconciliation check
-    setTimeout(checkReconciliation, 1000);
-  }, [submittedObject, postSubmitState, kubernetes]);
+  if (sourcePending) return <PageSection>
+    {error ? <Alert isInline variant="danger" title="Cannot load the selected workflow">{error}</Alert>
+      : <Spinner aria-label="Loading selected workflow" />}
+    <Button variant="link" onClick={() => navigate("/workflows")}>Back to workflows</Button>
+  </PageSection>;
 
   if (!parsedIdentity) {
     return (
@@ -365,6 +380,7 @@ export const PublishWizard = (): ReactNode => {
           </Alert>
         )}
 
+        {familyQuery.isError && <Alert isInline variant="warning" title="Cannot verify the workflow family in this namespace">{familyQuery.error.message}</Alert>}
         <Form>
           <FormGroup label="Namespace" isRequired fieldId="namespace">
             <TextInput
@@ -391,7 +407,7 @@ export const PublishWizard = (): ReactNode => {
               label="Publish new version (default)"
               description="Create a distinct definition on the family's runtime"
               isChecked={mode === "create"}
-              onChange={() => setMode("create")}
+              onChange={() => { setMode("create"); setVersion(family ? suggestNextVersion(family.versions) : parsedIdentity.version); }}
             />
             <Radio
               id="mode-update"
@@ -399,7 +415,7 @@ export const PublishWizard = (): ReactNode => {
               label="Update existing version"
               description="Update the selected CR in-place (shows diff before submit)"
               isChecked={mode === "update"}
-              onChange={() => setMode("update")}
+              onChange={() => { setMode("update"); setVersion(parsedIdentity.version); }}
             />
           </FormGroup>
 
@@ -474,7 +490,7 @@ export const PublishWizard = (): ReactNode => {
         <Button
           variant="primary"
           onClick={handlePreparePublish}
-          isDisabled={!selectedRuntime || !version || !namespace}
+          isDisabled={!familyQuery.isSuccess || !selectedRuntime || !version || !namespace}
         >
           Review {mode === "create" ? "new version" : "update"}
         </Button>
@@ -525,10 +541,10 @@ export const PublishWizard = (): ReactNode => {
           onWriteSuccess={handleWriteSuccess}
           onWriteError={(err) => {
             const errorStr = String(err);
-            if (errorStr.includes("conflict") || errorStr.includes("409")) {
+            if ((isKubernetesWriteRejection(err) && err.writeError.kind === "conflict") || errorStr.includes("conflict") || errorStr.includes("409")) {
               handleConflict();
-            } else {
-              setError(errorStr);
+            } else if (err instanceof Error) {
+              setError(err.message);
             }
           }}
         />
@@ -546,6 +562,7 @@ export const PublishWizard = (): ReactNode => {
       reconciling: "Reconciling...",
       reconciled: "Reconciled",
       "gateway-discovering": "Discovering in gateway...",
+      "gateway-pending": "Gateway routing pending",
       ready: "Ready to run",
     };
 
@@ -554,9 +571,8 @@ export const PublishWizard = (): ReactNode => {
       reconciling: "The operator is processing the workflow definition...",
       reconciled: "The workflow definition has been reconciled by the operator.",
       "gateway-discovering": "Waiting for the workflow to appear in the gateway catalog...",
-      ready: gatewayDefinition
-        ? "The workflow is routable and ready to run."
-        : "The workflow has been published. Gateway discovery may still be pending.",
+      "gateway-pending": "The gateway has not advertised a versioned execution link yet.",
+      ready: "The gateway advertises an execution link for this version.",
     };
 
     return (
@@ -580,9 +596,13 @@ export const PublishWizard = (): ReactNode => {
               />
             )}
             {postSubmitState === "ready" && gatewayDefinition && (
-              <p><strong>Gateway links available:</strong> execute, executeSync, instances</p>
+              <p><strong>Gateway links available:</strong> {Object.keys(gatewayDefinition._links).join(", ")}</p>
             )}
           </EmptyStateBody>
+          {postSubmitState === "gateway-pending" && <Button variant="secondary" onClick={() => {
+            setGatewayPollAttempts(0);
+            setPostSubmitState("gateway-discovering");
+          }}>Check gateway again</Button>}
           <Button
             variant="primary"
             onClick={() => {

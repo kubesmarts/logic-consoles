@@ -1,3 +1,4 @@
+import { usePlatform } from "../usePlatform.ts";
 /**
  * Runtime setup wizard — Packet D2 deliverable.
  * Guides an admin/author to select an existing runtime or create a new LogicFlowRuntime.
@@ -26,7 +27,6 @@ import {
   LogicKinds,
   type KubeObject,
   type LogicFlowRuntimeSpec,
-  type ClusterLogicPlatformSpec,
 } from "../../contracts/index.ts";
 import type { RuntimeSetupDraft } from "./types.ts";
 import type { LogicFlowRuntimeCRSpec, LogicFlowRuntimeCRStatus } from "./buildRuntimeCR.ts";
@@ -39,16 +39,17 @@ import { RuntimeReviewStep } from "./steps/RuntimeReviewStep.tsx";
 interface RuntimeSetupWizardProps {
   readonly onComplete?: () => void;
   readonly onCancel?: () => void;
+  readonly editing?: KubeObject<LogicFlowRuntimeCRSpec, LogicFlowRuntimeCRStatus>;
   readonly initialRuntimeName?: string;
 }
 
 export const RuntimeSetupWizard = ({
   onComplete,
   onCancel,
-  initialRuntimeName,
+  initialRuntimeName, editing,
 }: RuntimeSetupWizardProps): ReactNode => {
   const { session, kubernetes, capabilities } = useConsole();
-  const namespace = session.namespace ?? "default";
+  const namespace = editing?.metadata.namespace ?? session.namespace ?? "default";
 
   // Discover existing runtimes in the namespace
   const runtimesQuery = useQuery({
@@ -59,28 +60,15 @@ export const RuntimeSetupWizard = ({
           { group: LOGIC_GROUP, version: LOGIC_VERSION, kind: LogicKinds.LogicFlowRuntime },
           { namespace },
           signal,
-        )
-        .catch(() => ({ items: [] })), // Gracefully handle list failure
+        ),
   });
 
   // Discover platform for platformRef and Vector watch namespaces
-  const platformQuery = useQuery({
-    queryKey: [session.sessionId, session.context.contextName, "platform-discovery"],
-    queryFn: ({ signal }) =>
-      kubernetes
-        .get<ClusterLogicPlatformSpec>(
-          {
-            gvk: { group: LOGIC_GROUP, version: LOGIC_VERSION, kind: LogicKinds.ClusterLogicPlatform },
-            name: "cluster-platform",
-          },
-          signal,
-        )
-        .catch(() => null), // Platform may not exist
-  });
+  const platformQuery = usePlatform();
 
   // Check create permission
   const canCreateRuntimeQuery = useQuery({
-    queryKey: [session.sessionId, "can-create-runtime"],
+    queryKey: [session.sessionId, "can-create-runtime", namespace],
     queryFn: ({ signal }) =>
       capabilities.canI(
         {
@@ -95,8 +83,14 @@ export const RuntimeSetupWizard = ({
 
   // Initialize draft
   const initializeDraft = (): RuntimeSetupDraft => {
+    if (editing) return {
+      mode: "create-new", name: editing.metadata.name, namespace,
+      platformRef: editing.spec?.platformRef?.name, persistenceMode: editing.spec?.persistenceMode ?? "Ephemeral",
+    };
     const hasExistingRuntimes = (runtimesQuery.data?.items.length ?? 0) > 0;
-    const canCreate = canCreateRuntimeQuery.data?.decision === "allowed";
+
+
+    const structuredLogging = platformQuery.data?.spec?.dataIndex ? { enabled: true } : undefined;
 
     // If initialRuntimeName is provided and exists, start in select mode
     if (initialRuntimeName && hasExistingRuntimes) {
@@ -105,6 +99,7 @@ export const RuntimeSetupWizard = ({
         return {
           mode: "select-existing",
           selectedRuntimeName: initialRuntimeName,
+          structuredLogging,
           name: "",
           namespace,
           persistenceMode: "Ephemeral",
@@ -114,18 +109,20 @@ export const RuntimeSetupWizard = ({
 
     // Default to select-existing if runtimes exist, otherwise create-new
     return {
-      mode: hasExistingRuntimes && canCreate ? "select-existing" : "create-new",
+      structuredLogging,
+      mode: hasExistingRuntimes ? "select-existing" : "create-new",
       name: "",
       namespace,
       persistenceMode: "Ephemeral",
     };
   };
 
-  const [draft, setDraft] = useState<RuntimeSetupDraft>(initializeDraft());
+  const [editedDraft, setDraft] = useState<RuntimeSetupDraft>();
+  const draft = editedDraft ?? initializeDraft();
 
   const handleDraftUpdate = useCallback((updates: Partial<RuntimeSetupDraft>): void => {
-    setDraft((prev) => ({ ...prev, ...updates }));
-  }, []);
+    setDraft({ ...draft, ...updates });
+  }, [draft]);
 
   // Loading state
   if (
@@ -216,6 +213,7 @@ export const RuntimeSetupWizard = ({
         if (onComplete) onComplete();
       }}
     >
+      {!editing && (
       <WizardStep name="Mode selection" id="mode-selection">
         <ModeSelectionStep
           draft={draft}
@@ -224,17 +222,19 @@ export const RuntimeSetupWizard = ({
           canCreate={canCreate}
         />
       </WizardStep>
-
+      )}
       <WizardStep name="Basic configuration" id="basic-config">
         <BasicConfigStep
           draft={draft}
           onChange={handleDraftUpdate}
+          editIdentity={!!editing}
+          persistence={platformQuery.data?.spec?.runtime?.persistence}
           platformName={platformName}
           activeNamespace={namespace}
         />
       </WizardStep>
 
-      <WizardStep name="Replicas and logging" id="replicas-logging">
+      <WizardStep isHidden={!!editing} name="Replicas and logging" id="replicas-logging">
         <ReplicasAndLoggingStep
           draft={draft}
           onChange={handleDraftUpdate}
@@ -242,7 +242,7 @@ export const RuntimeSetupWizard = ({
         />
       </WizardStep>
 
-      <WizardStep name="Security" id="security">
+      <WizardStep isHidden={!!editing} name="Security" id="security">
         <SecurityStep draft={draft} onChange={handleDraftUpdate} />
       </WizardStep>
 
@@ -251,7 +251,8 @@ export const RuntimeSetupWizard = ({
           draft={draft}
           onComplete={onComplete}
           onCancel={onCancel}
-          editMode={false}
+          editMode={!!editing}
+          existingRuntime={editing}
         />
       </WizardStep>
     </Wizard>

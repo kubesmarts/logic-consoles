@@ -21,36 +21,26 @@ import {
   Button,
 } from "@patternfly/react-core";
 import { useConsole } from "../ConsoleContext.tsx";
-import {
-  LOGIC_GROUP,
-  LOGIC_VERSION,
-  LogicKinds,
-  type ClusterLogicPlatformSpec,
-} from "../../contracts/index.ts";
+import { LOGIC_GROUP } from "../../contracts/index.ts";
+import { usePlatform } from "../../setup/usePlatform.ts";
 import { PlatformSetupWizard } from "../../setup/index.ts";
 
 export const PlatformPage = (): ReactNode => {
-  const { session, kubernetes } = useConsole();
+  const { session, capabilities } = useConsole();
   const [showSetupWizard, setShowSetupWizard] = useState(false);
 
-  const query = useQuery({
-    queryKey: [session.sessionId, session.context.contextName, "platform"],
-    queryFn: ({ signal }) =>
-      kubernetes.get<ClusterLogicPlatformSpec>(
-        { gvk: { group: LOGIC_GROUP, version: LOGIC_VERSION, kind: LogicKinds.ClusterLogicPlatform }, name: "cluster-platform" },
-        signal,
-      ).catch((err: unknown) => {
-        // Check if it's a 403
-        if (err && typeof err === "object" && "statusCode" in err && err.statusCode === 403) {
-          return null; // Platform discovery forbidden
-        }
-        throw err;
-      }),
+  const query = usePlatform();
+  const verb = query.data ? "update" : "create";
+  const access = useQuery({
+    queryKey: [session.sessionId, "can-write-platform", verb],
+    queryFn: ({ signal }) => capabilities.canI({ group: LOGIC_GROUP, verb, resource: "clusterlogicplatforms" }, signal),
+    enabled: query.isSuccess,
   });
 
   if (showSetupWizard) {
     return (
       <PlatformSetupWizard
+        editMode={Boolean(query.data)}
         onComplete={() => {
           setShowSetupWizard(false);
           query.refetch();
@@ -78,14 +68,10 @@ export const PlatformPage = (): ReactNode => {
               {query.error instanceof Error ? query.error.message : "Failed to load platform configuration."}
             </EmptyStateBody>
           </EmptyState>
-        ) : query.data === null ? (
-          <EmptyState titleText="Platform discovery denied" headingLevel="h2">
-            <EmptyStateBody>You don't have permission to read the platform. Available actions may be limited.</EmptyStateBody>
-          </EmptyState>
         ) : !query.data ? (
           <EmptyState titleText="No platform configured" headingLevel="h2">
             <EmptyStateBody>Set up a cluster-scoped ClusterLogicPlatform to begin.</EmptyStateBody>
-            <Button variant="primary" onClick={() => setShowSetupWizard(true)}>
+            <Button variant="primary" isDisabled={access.data?.decision !== "allowed"} onClick={() => setShowSetupWizard(true)}>
               Set up platform
             </Button>
           </EmptyState>
@@ -105,7 +91,9 @@ export const PlatformPage = (): ReactNode => {
               </DescriptionListGroup>
             </DescriptionList>
             <div style={{ marginTop: "1.5rem" }}>
-              <Button variant="secondary">View configuration</Button>
+              {access.data?.decision === "allowed" ? (
+                <Button variant="secondary" onClick={() => setShowSetupWizard(true)}>Edit platform</Button>
+              ) : <Content component="small">Read-only access</Content>}
             </div>
           </>
         )}

@@ -118,7 +118,7 @@ export const RuntimeReviewStep = ({
     editMode && existingRuntime
       ? {
           ...existingRuntime,
-          spec: runtimeCR.spec,
+          spec: { ...existingRuntime.spec, persistenceMode: draft.persistenceMode, platformRef: draft.platformRef ? { name: draft.platformRef } : undefined },
         }
       : runtimeCR;
 
@@ -214,7 +214,11 @@ export const RuntimeReviewStep = ({
       <PageSection>
         <Title headingLevel="h1">{stateMessages[postSubmitState]}</Title>
         <div style={{ marginTop: "1rem", marginBottom: "2rem" }}>
-          {postSubmitState === "submitted" || postSubmitState === "reconciling" ? (
+          {reconciliation?.error && submittedObject ? (
+            <Alert variant="warning" title={reconciliation.error} isInline>
+              <Button variant="link" onClick={() => editorController.startReconciliation(submittedObject)}>Retry status</Button>
+            </Alert>
+          ) : postSubmitState === "submitted" || postSubmitState === "reconciling" ? (
             <Alert variant="info" title={stateDescriptions[postSubmitState]} isInline>
               <Spinner size="md" style={{ marginRight: "0.5rem" }} />
               Checking operator status...

@@ -11,9 +11,7 @@
  * CR-name generation, version suggestion, and the publish action.
  */
 import { lazy } from "react";
-import type { ReactNode } from "react";
 import type { FeatureRoute } from "../app/routes.tsx";
-import { AuthoringProvider } from "./AuthoringProvider.tsx";
 
 /**
  * Lazy-load the authoring workspace so Monaco + CNCF diagram stay out of the main
@@ -31,33 +29,15 @@ const PublishWizard = lazy(() =>
 );
 
 /**
- * Wrapper that provides authoring context for routes.
- */
-const AuthoringWorkspaceWithProvider = (): ReactNode => (
-  <AuthoringProvider>
-    <AuthoringWorkspace />
-  </AuthoringProvider>
-);
-
-/**
- * Wrapper that provides authoring context for the publish wizard.
- */
-const PublishWizardWithProvider = (): ReactNode => (
-  <AuthoringProvider>
-    <PublishWizard />
-  </AuthoringProvider>
-);
-
-/**
  * E1 + E2 feature routes. The shell integrates these via `AppRoutes({ featureRoutes })`.
  * - /authoring → blank workspace
  * - /authoring/:draftId → resume a saved draft
  * - /publish → publish wizard (E2)
  */
 export const authoringRoutes: readonly FeatureRoute[] = [
-  { path: "/authoring", element: <AuthoringWorkspaceWithProvider /> },
-  { path: "/authoring/:draftId", element: <AuthoringWorkspaceWithProvider /> },
-  { path: "/publish", element: <PublishWizardWithProvider /> },
+  { path: "/authoring", element: <AuthoringWorkspace /> },
+  { path: "/authoring/:draftId", element: <AuthoringWorkspace /> },
+  { path: "/publish", element: <PublishWizard /> },
 ];
 
 // Re-export the provider and hook for E2 integration

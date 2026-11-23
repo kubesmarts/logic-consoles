@@ -21,7 +21,7 @@ describe("handleInstanceAction - template substitution", () => {
       json: async () => ({ status: "suspended" }),
     } as Response);
 
-    const linkHref = "/v1/instances/{id}/suspend";
+    const linkHref = "/v1/runtime/ns/name/1.0.0/instance/{id}/suspend";
     const instanceId = "inst-12345";
 
     const result = await handleInstanceAction(config, linkHref, instanceId);
@@ -34,7 +34,7 @@ describe("handleInstanceAction - template substitution", () => {
 
     // Verify fetch was called with the substituted path
     expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining("/v1/instances/inst-12345/suspend"),
+      expect.stringContaining("/v1/runtime/ns/name/1.0.0/instance/inst-12345/suspend"),
       expect.any(Object)
     );
 
@@ -48,7 +48,7 @@ describe("handleInstanceAction - template substitution", () => {
       json: async () => ({ status: "suspended" }),
     } as Response);
 
-    const linkHref = "/v1/instances/{id}/suspend";
+    const linkHref = "/v1/runtime/ns/name/1.0.0/instance/{id}/suspend";
     // Malicious instanceId trying to inject path segments
     const maliciousId = "../../../evil";
 
@@ -86,7 +86,7 @@ describe("handleInstanceAction - template substitution", () => {
       json: async () => ({ status: "running" }),
     } as Response);
 
-    const linkHref = "/v1/instances/{id}/resume";
+    const linkHref = "/v1/runtime/ns/name/1.0.0/instance/{id}/resume";
     const instanceId = "inst-67890";
 
     const result = await handleInstanceAction(config, linkHref, instanceId);
@@ -95,7 +95,7 @@ describe("handleInstanceAction - template substitution", () => {
     expect(result.httpStatus).toBe(200);
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining("/v1/instances/inst-67890/resume"),
+      expect.stringContaining("/v1/runtime/ns/name/1.0.0/instance/inst-67890/resume"),
       expect.any(Object)
     );
 
@@ -109,7 +109,7 @@ describe("handleInstanceAction - template substitution", () => {
       json: async () => ({ status: "cancelled" }),
     } as Response);
 
-    const linkHref = "/v1/instances/{id}/cancel";
+    const linkHref = "/v1/runtime/ns/name/1.0.0/instance/{id}/cancel";
     const instanceId = "inst-99999";
 
     const result = await handleInstanceAction(config, linkHref, instanceId);
@@ -118,7 +118,7 @@ describe("handleInstanceAction - template substitution", () => {
     expect(result.httpStatus).toBe(200);
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining("/v1/instances/inst-99999/cancel"),
+      expect.stringContaining("/v1/runtime/ns/name/1.0.0/instance/inst-99999/cancel"),
       expect.any(Object)
     );
 
@@ -181,7 +181,7 @@ describe("handleExecute and handleExecuteSync - SSRF prevention", () => {
 
     const result = await handleExecute(config, href, input);
 
-    expect(result).toEqual({ instanceId: "inst-123", workflowApplicationId: "app-456" });
+    expect(result).toEqual({ instanceId: "inst-123", workflowApplicationId: "app-456", raw: { instanceId: "inst-123", workflowApplicationId: "app-456" } });
 
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringContaining("/v1/runtime/ns/name/1.0.0"),
@@ -198,7 +198,7 @@ describe("handleExecute and handleExecuteSync - SSRF prevention", () => {
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ output: { result: "success" } }),
+      json: async () => ({ workflowdata: { result: "success" } }),
     } as Response);
 
     const href = "/v1/runtime/ns/name/1.0.0/sync";
@@ -206,7 +206,7 @@ describe("handleExecute and handleExecuteSync - SSRF prevention", () => {
 
     const result = await handleExecuteSync(config, href, input);
 
-    expect(result).toEqual({ output: { result: "success" } });
+    expect(result).toEqual({ output: { result: "success" }, raw: { workflowdata: { result: "success" } } });
 
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringContaining("/v1/runtime/ns/name/1.0.0/sync"),

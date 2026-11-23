@@ -129,7 +129,7 @@ export const useResourceEditor = <TSpec = unknown, TStatus = unknown>({
       // Review fix #5: Call parseDraft directly instead of serialize→re-parse
       const parsed = parseDraft<TSpec>(newDoc, prev.draft);
       const newYaml = serializeDocument(newDoc);
-      return { ...prev, draft: parsed, yamlText: newYaml };
+      return { ...prev, admitted: null, draft: parsed, yamlText: newYaml };
     });
   }, []);
 
@@ -137,7 +137,7 @@ export const useResourceEditor = <TSpec = unknown, TStatus = unknown>({
     setState((prev) => {
       // Review fix #2: Pass previousDraft to preserve lastValidObject
       const parsed = parseYamlText<TSpec>(text, prev.draft);
-      return { ...prev, draft: parsed, yamlText: text };
+      return { ...prev, admitted: null, draft: parsed, yamlText: text };
     });
   }, []);
 
@@ -175,7 +175,7 @@ export const useResourceEditor = <TSpec = unknown, TStatus = unknown>({
         }
 
         const admitted = await transport.dryRun<TSpec, TStatus>(candidate, currentState.verb, signal);
-        setState((prev) => ({ ...prev, admitted, submitting: false, errors: [] }));
+        setState((prev) => ({ ...prev, admitted: prev.draft === currentState.draft ? admitted : null, submitting: false, errors: [] }));
       } catch (error) {
         // Review fix #6: Use extracted helper
         const writeError = extractWriteError(error);
@@ -197,6 +197,10 @@ export const useResourceEditor = <TSpec = unknown, TStatus = unknown>({
           throw new Error("Invalid YAML: cannot build candidate");
         }
 
+        if (!currentState.admitted) {
+          await transport.dryRun(candidate, currentState.verb, signal);
+          if (stateRef.current.draft !== currentState.draft) throw new Error("Draft changed during validation. Review the updated draft.");
+        }
         const result =
           currentState.verb === "create"
             ? await transport.create<TSpec, TStatus>(candidate, signal)
@@ -227,47 +231,54 @@ export const useResourceEditor = <TSpec = unknown, TStatus = unknown>({
     [transport, ref],
   );
 
+  const activeObservation = useRef<AbortController | null>(null);
+  useEffect(() => () => activeObservation.current?.abort(), [transport, ref.gvk.kind, ref.name, ref.namespace]);
+
   const startReconciliation = useCallback(
     (submitted: KubeObject<TSpec, TStatus>, signal?: AbortSignal): void => {
-      setReconciliation({
-        submitted,
-        observed: null,
-        reconciled: false,
-      });
-
+      activeObservation.current?.abort();
+      const controller = new AbortController();
+      activeObservation.current = controller;
+      const stop = () => controller.abort();
+      if (signal?.aborted) return;
+      signal?.addEventListener("abort", stop, { once: true });
+      let timer: ReturnType<typeof setTimeout>;
+      controller.signal.addEventListener("abort", () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", stop);
+      }, { once: true });
+      setReconciliation({ submitted, observed: null, reconciled: false });
+      const observe = (observed: KubeObject<TSpec, TStatus>) => {
+        if (controller.signal.aborted) return;
+        const status = observed.status as { observedGeneration?: number; phase?: string } | undefined;
+        const current = observed.metadata.generation !== undefined && status?.observedGeneration === observed.metadata.generation;
+        const reconciled = current && (!status?.phase || status.phase === "Ready");
+        const failed = current && status?.phase === "Failed";
+        setReconciliation({ submitted, observed, reconciled, ...(failed && { error: "The operator reports Failed. Inspect the resource conditions." }) });
+        if (reconciled || failed) stop();
+      };
       if (transport.watchStatus) {
-        const unsubscribe = transport.watchStatus<TSpec, TStatus>(
-          ref,
-          (observed) => {
-            const reconciled =
-              observed.status &&
-              typeof observed.status === "object" &&
-              "observedGeneration" in observed.status &&
-              observed.status.observedGeneration === observed.metadata.generation;
-
-            setReconciliation({ submitted, observed, reconciled: Boolean(reconciled) });
-          },
-          signal,
-        );
-
-        signal?.addEventListener("abort", unsubscribe);
-      } else {
-        // Fallback: refetch once
-        transport
-          .get<TSpec, TStatus>(ref, signal)
-          .then((observed) => {
-            const reconciled =
-              observed.status &&
-              typeof observed.status === "object" &&
-              "observedGeneration" in observed.status &&
-              observed.status.observedGeneration === observed.metadata.generation;
-
-            setReconciliation({ submitted, observed, reconciled: Boolean(reconciled) });
-          })
-          .catch(() => {
-            // Ignore refetch errors
-          });
+        const unsubscribe = transport.watchStatus<TSpec, TStatus>(ref, observe, controller.signal);
+        if (controller.signal.aborted) unsubscribe();
+        else controller.signal.addEventListener("abort", unsubscribe, { once: true });
+        return;
       }
+      let attempts = 0;
+      const poll = async () => {
+        attempts++;
+        try {
+          observe(await transport.get<TSpec, TStatus>(ref, AbortSignal.any([controller.signal, AbortSignal.timeout(10000)])));
+        } catch {
+          if (controller.signal.aborted) return;
+        }
+        if (controller.signal.aborted) return;
+        if (attempts < 60) timer = setTimeout(poll, 2000);
+        else {
+          setReconciliation(prev => prev && ({ ...prev, error: "Readiness could not be confirmed. Check the resource status or retry." }));
+          stop();
+        }
+      };
+      void poll();
     },
     [transport, ref],
   );

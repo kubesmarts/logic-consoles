@@ -26,11 +26,11 @@ interface GatewayStepProps {
 }
 
 export const GatewayStep = ({ draft, onUpdate }: GatewayStepProps): ReactNode => {
-  const { kubernetes } = useConsole();
+  const { kubernetes, session } = useConsole();
 
   // List IngressClasses
   const ingressClassesQuery = useQuery({
-    queryKey: ["ingress-classes"],
+    queryKey: [session.sessionId, "ingress-classes"],
     queryFn: ({ signal }) =>
       kubernetes
         .list(
@@ -53,7 +53,7 @@ export const GatewayStep = ({ draft, onUpdate }: GatewayStepProps): ReactNode =>
   });
 
   const ingressClasses = ingressClassesQuery.data ?? [];
-  const hasNginx = ingressClasses.some((ic) => ic.name === "nginx");
+  const hasNginx = ingressClasses.some((ic) => ic.controller === "k8s.io/ingress-nginx");
 
   const gateway = draft.gatewayIngress;
 
@@ -70,10 +70,10 @@ export const GatewayStep = ({ draft, onUpdate }: GatewayStepProps): ReactNode =>
         (OpenShift).
       </Alert>
 
-      {!hasNginx && (
-        <Alert isInline variant={AlertVariant.warning} title="ingress-nginx not found">
+      {gateway.enabled && !hasNginx && ingressClassesQuery.isSuccess && (
+        <Alert isInline variant={AlertVariant.warning} title="Kubernetes ingress controller">
           <div style={{ marginBottom: "0.5rem" }}>
-            This cluster doesn't have the community ingress-nginx controller. See{" "}
+            On Kubernetes and KIND, install ingress-nginx. OpenShift uses a Route. See{" "}
             <a href="https://github.com/kubesmarts/logic-operator/blob/b9a71660267f0cad794b95e010569b280a932da8/docs/antora/modules/ROOT/pages/deployment/kind-local.adoc">
               cluster setup guidance
             </a>
@@ -89,13 +89,13 @@ export const GatewayStep = ({ draft, onUpdate }: GatewayStepProps): ReactNode =>
         <FormGroup fieldId="gateway-ingress-enabled">
           <Checkbox
             id="gateway-ingress-enabled"
-            label="Enable gateway ingress"
+            label="Enable external gateway access"
             isChecked={gateway.enabled}
             onChange={(_event, checked) => handleUpdate({ enabled: checked })}
           />
           <FormHelperText>
             <HelperText>
-              <HelperTextItem>Create Kubernetes Ingress for external access to the gateway</HelperTextItem>
+              <HelperTextItem>Create an Ingress on Kubernetes or a Route on OpenShift</HelperTextItem>
             </HelperText>
           </FormHelperText>
         </FormGroup>

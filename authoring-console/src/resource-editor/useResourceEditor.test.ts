@@ -4,7 +4,7 @@
  * Cover: dry-run, create, update, 409 conflict handling, admission errors,
  * field updates preserving advanced fields, invalid YAML.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import type { KubeObject, ResourceRef } from "../contracts/index.ts";
 import { createFixtureKubernetesTransport } from "../fixtures/transports/kubernetes.ts";
@@ -21,6 +21,26 @@ describe("useResourceEditor", () => {
     kind: "Namespace",
     metadata: { name: "test-namespace" },
   };
+
+  it("polls past a pending generation and transient read failure until the operator is ready", async () => {
+    vi.useFakeTimers();
+    try {
+      const get = vi.fn().mockResolvedValueOnce({ ...seed, metadata: { ...seed.metadata, generation: 2 }, status: { observedGeneration: 2, phase: "Pending" } })
+        .mockRejectedValueOnce(new Error("Unavailable"))
+        .mockResolvedValue({ ...seed, metadata: { ...seed.metadata, generation: 2 }, status: { observedGeneration: 2, phase: "Ready" } });
+      const transport = { ...createFixtureKubernetesTransport(), get, watchStatus: undefined };
+      const { result, unmount } = renderHook(() => useResourceEditor({ transport, ref, seed, verb: "create" }));
+      await act(async () => result.current.startReconciliation(seed));
+      expect(result.current.reconciliation?.reconciled).toBe(false);
+      await act(async () => vi.advanceTimersByTimeAsync(4000));
+      expect(result.current.reconciliation?.reconciled).toBe(true);
+      await act(async () => vi.advanceTimersByTimeAsync(4000));
+      expect(get).toHaveBeenCalledTimes(3);
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("initializes with form mode and parsed draft", () => {
     const transport = createFixtureKubernetesTransport();

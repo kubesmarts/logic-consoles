@@ -194,6 +194,12 @@ export const ResourceEditor = <TSpec = unknown, TStatus = unknown>({
           </Tab>
         </Tabs>
 
+        {state.diff && <details><summary>Changes from deployed resource</summary>
+          <ul>{[...state.diff.added, ...state.diff.changed, ...state.diff.removed].map(field =>
+            <li key={field.path}><code>{field.path}</code> {JSON.stringify(field.deployed) ?? "absent"} → {JSON.stringify(field.draft) ?? "removed"}</li>
+          )}</ul>
+        </details>}
+        {state.admitted && <Alert isInline variant="success" title="Server dry-run succeeded" />}
         <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem" }}>
           <Button variant="secondary" onClick={handleDryRun} isDisabled={state.submitting}>
             {state.submitting ? <Spinner size="sm" /> : "Dry Run"}

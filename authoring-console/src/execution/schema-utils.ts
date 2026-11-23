@@ -30,13 +30,18 @@ export const getSupportedInputSchema = (flow: WorkflowDocument): SupportedJsonSc
 
   // Basic validation: must be an object schema
   const schemaDoc = document as Record<string, unknown>;
-  if (schemaDoc.type !== "object") return null;
+  if (schemaDoc.type !== "object" || !isPropertySupported(schemaDoc)) return null;
 
   // Check if all properties are supported types
-  const properties = schemaDoc.properties as Record<string, unknown> | undefined;
-  if (properties && !isPropertiesSupported(properties)) return null;
 
-  return document as SupportedJsonSchema;
+  // Compile locally. Unsupported dialects, unresolved refs and malformed schemas
+  // can still use the raw JSON path, without claiming schema validation.
+  try {
+    createSchemaValidator(document as SupportedJsonSchema);
+    return document as SupportedJsonSchema;
+  } catch {
+    return null;
+  }
 };
 
 /** Check if all properties use supported JSON Schema types. */
@@ -51,6 +56,7 @@ const isPropertiesSupported = (properties: Record<string, unknown>): boolean => 
 const isPropertySupported = (prop: unknown): boolean => {
   if (!prop || typeof prop !== "object") return false;
   const p = prop as Record<string, unknown>;
+  if (p.$ref || p.oneOf || p.anyOf || p.allOf || p.not || p.if) return false;
   const type = p.type;
 
   // Primitives
@@ -66,11 +72,7 @@ const isPropertySupported = (prop: unknown): boolean => {
   }
 
   // Array
-  if (type === "array") {
-    const items = p.items as unknown;
-    if (items && !isPropertySupported(items)) return false;
-    return true;
-  }
+  if (type === "array") return isPropertySupported(p.items);
 
   return false;
 };
@@ -124,7 +126,7 @@ export const initializeFormData = (schema: SupportedJsonSchema): Record<string, 
   return data;
 };
 
-const getDefaultValue = (prop: JsonSchemaProperty): unknown => {
+export const getDefaultValue = (prop: JsonSchemaProperty): unknown => {
   switch (prop.type) {
     case "string":
       return "";

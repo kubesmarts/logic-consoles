@@ -4,12 +4,10 @@
  * Discovers the gateway address from the platform and calls it over the workstation network.
  * Validates its certificate when HTTPS. The gateway uses its own service account for K8s discovery.
  */
-import * as https from "node:https";
+
 
 export interface GatewayClientConfig {
   readonly baseUrl: string;
-  /** Validate HTTPS certificates (default: true). Set false only for local dev. */
-  readonly validateCerts?: boolean;
 }
 
 export interface GatewayResponse<T> {
@@ -107,19 +105,12 @@ export const fetchGateway = async <T>(
       Accept: "application/json",
       ...options.headers,
     },
-    signal: options.signal,
+    redirect: "error",
+    signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(60_000),
   };
 
   if (options.body !== undefined) {
     fetchOptions.body = JSON.stringify(options.body);
-  }
-
-  // For HTTPS with self-signed certs (local dev), optionally disable validation
-  if (url.protocol === "https:" && config.validateCerts === false) {
-    // Node.js global agent modification for local dev only
-    const agent = new https.Agent({ rejectUnauthorized: false });
-    // @ts-expect-error - agent is not in RequestInit type but works in Node.js fetch
-    fetchOptions.agent = agent;
   }
 
   try {
@@ -140,7 +131,7 @@ export const fetchGateway = async <T>(
       } satisfies GatewayErrorResponse;
     }
 
-    const data = (await response.json()) as T;
+    const data = (response.status === 204 ? null : await response.json()) as T;
     return {
       status: response.status,
       data,

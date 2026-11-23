@@ -42,6 +42,7 @@ export interface TopologyViewProps {
    * Optional Run action slot for Packet G. When provided, renders the Run UI
    * in the definition drawer, exposing the selected deployed version and its links.
    */
+  readonly renderPlatformSummary?: (platform: TopologyNode) => ReactNode;
   readonly renderRunAction?: (version: TopologyNode) => ReactNode;
 }
 
@@ -51,7 +52,7 @@ interface TopologyViewState {
   readonly retrying: boolean;
 }
 
-export const TopologyView = ({ namespace, gateway, navigation, renderRunAction }: TopologyViewProps): ReactNode => {
+export const TopologyView = ({ namespace, gateway, navigation, renderRunAction, renderPlatformSummary }: TopologyViewProps): ReactNode => {
   const [viewState, setViewState] = useState<TopologyViewState>({
     selectedNodeId: null,
     showList: false,
@@ -116,6 +117,7 @@ export const TopologyView = ({ namespace, gateway, navigation, renderRunAction }
           )}
           <PageSection>
             <Title headingLevel="h2">Topology</Title>
+            {renderPlatformSummary && query.data.nodes.filter(node => node.kind === "ClusterLogicPlatform").map(renderPlatformSummary)}
             <Toolbar>
               <ToolbarContent>
                 <ToolbarItem>

@@ -4,10 +4,14 @@
  * Serves the built React bundle AND a same-origin JSON API on 127.0.0.1.
  * Validates Host/Origin on every request. Ties requests to session ID + selected context.
  */
+import { of } from "@kubernetes/client-node/dist/gen/rxjsStub.js";
+import { randomUUID } from "node:crypto";
+import { RequestError, upstreamStatus } from "./api/errors.js";
+import { createK8sClient, getClusterDisplay, listContexts } from "./kubernetes-client.js";
 import * as http from "node:http";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { LauncherState, SessionContextKey } from "./types.js";
+import type { LauncherState } from "./types.js";
 import {
   validateLoopbackRequest,
   extractSessionContext,
@@ -38,6 +42,7 @@ import {
 export interface ServerConfig {
   readonly port: number;
   readonly distPath: string;
+  serveDevelopmentAssets?: http.RequestListener;
 }
 
 /** Parse URL path and query. */
@@ -51,30 +56,28 @@ const parseUrl = (url: string): { pathname: string; searchParams: URLSearchParam
 
 /** Read request body as JSON. */
 const readBody = async (req: http.IncomingMessage): Promise<unknown> => {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => {
-      try {
-        const body = Buffer.concat(chunks).toString("utf-8");
-        resolve(body ? JSON.parse(body) : null);
-      } catch (error) {
-        reject(error);
-      }
-    });
-    req.on("error", reject);
-  });
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.from(chunk);
+    size += buffer.length;
+    if (size > 4 * 1024 * 1024) throw new RequestError(413, "Request too large");
+    chunks.push(buffer);
+  }
+  if (!size) return {};
+  try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+  catch { throw new RequestError(400, "Invalid JSON request"); }
 };
 
 /** Send JSON response. */
 const sendJson = (res: http.ServerResponse, status: number, data: unknown): void => {
-  res.writeHead(status, { "Content-Type": "application/json" });
+  res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
   res.end(JSON.stringify(data));
 };
 
 /** Send error response. */
 const sendError = (res: http.ServerResponse, status: number, message: string): void => {
-  sendJson(res, status, { error: message });
+  sendJson(res, status, { error: message, message, status });
 };
 
 /** Create HTTP server. */
@@ -91,14 +94,15 @@ export const createServer = (
 
   const server = http.createServer(async (req, res) => {
     // Validate loopback request FIRST (fail-closed, even for OPTIONS)
-    if (!validateLoopbackRequest(req, origin)) {
+    const expectedOrigin = config.port === 0 ? { ...origin, port: req.socket.localPort! } : origin;
+    if (!validateLoopbackRequest(req, expectedOrigin)) {
       res.writeHead(403);
       res.end("Forbidden");
       return;
     }
 
     // Add CORS headers for same-origin API calls (after validation)
-    res.setHeader("Access-Control-Allow-Origin", `http://127.0.0.1:${config.port}`);
+    res.setHeader("Access-Control-Allow-Origin", `http://127.0.0.1:${expectedOrigin.port}`);
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Session-Id, X-Context-Name");
     res.setHeader("Access-Control-Allow-Credentials", "true");
@@ -110,54 +114,116 @@ export const createServer = (
       return;
     }
 
-    const { pathname } = parseUrl(req.url ?? "/");
+    let pathname;
+    try { pathname = parseUrl(req.url ?? "/").pathname; }
+    catch { sendError(res, 400, "Invalid request URL"); return; }
 
-    // API routes
     if (pathname.startsWith("/api/")) {
-      // Extract and validate session+context (except for /api/session and /api/contexts)
-      if (!pathname.startsWith("/api/session") && !pathname.startsWith("/api/contexts")) {
-        const sessionContext = extractSessionContext(req);
-        if (!sessionContext) {
-          sendError(res, 401, "Missing session or context headers");
-          return;
-        }
-
-        if (!state.context) {
-          sendError(res, 400, "No context selected");
-          return;
-        }
-
-        const activeKey: SessionContextKey = {
-          sessionId: state.session.sessionId,
-          contextName: state.context.contextName,
-        };
-
-        if (!validateSessionContext(sessionContext, activeKey)) {
-          sendError(res, 409, "Session or context mismatch - request invalidated");
-          return;
-        }
-      }
-
       try {
-        await handleApiRequest(req, res, pathname, state, k8sClient);
+        // Read the complete body before validating identity. A context change while
+        // the request is uploading must invalidate it before any write is dispatched.
+        const body = req.method === "POST" ? await readBody(req) : {};
+        const bootstrap = req.method === "GET" && ["/api/session", "/api/contexts"].includes(pathname);
+        if (!bootstrap) {
+          const key = extractSessionContext(req);
+          if (!key || !state.context) { sendError(res, 401, "Missing session or context"); return; }
+          if (!validateSessionContext(key, { sessionId: state.session.sessionId, contextName: state.context.contextName })) {
+            sendJson(res, 409, { status: 409, kind: "session-changed", message: "Session or context changed" });
+            return;
+          }
+        }
+        if (req.method === "POST" && (pathname === "/api/connect" || pathname === "/api/disconnect")) {
+          const next = body as { contextName?: string; gatewayUrl?: string | null };
+          if (pathname === "/api/connect") {
+            const name = next.contextName;
+            if (!name || !listContexts().some(ctx => ctx.name === name)) throw new RequestError(400, "Unknown kubeconfig context");
+            const epoch = state.session.sessionId;
+            const client = createK8sClient(name);
+            const gateway = configuredGateway(next.gatewayUrl) ?? await discoverGateway(client);
+            if (state.session.sessionId !== epoch) {
+              sendJson(res, 409, { status: 409, kind: "session-changed", message: "Session or context changed" });
+              return;
+            }
+            k8sClient = client;
+            state.context = { contextName: name, clusterDisplay: getClusterDisplay(client.kc), selectedAt: new Date() };
+            state.gateway = gateway;
+          } else {
+            state.gateway = null;
+          }
+          state.session = { sessionId: randomUUID(), startedAt: new Date() };
+          sendJson(res, 200, sessionInfo(state));
+          return;
+        }
+        // A platform may have been installed or become ready after Connect.
+        if (!state.gateway && pathname.startsWith("/api/gateway/")) {
+          const epoch = state.session.sessionId;
+          const gateway = await discoverGateway(k8sClient);
+          if (state.session.sessionId !== epoch) {
+            sendJson(res, 409, { status: 409, kind: "session-changed", message: "Session or context changed" });
+            return;
+          }
+          state.gateway ??= gateway;
+        }
+        await handleApiRequest(req, res, pathname, state, k8sClient, body);
       } catch (error) {
-        // Sanitize error logging - never log full error object (could contain Secret contents, payloads)
-        const sanitizedMessage =
-          error instanceof Error
-            ? error.message.substring(0, 200) // Truncate to avoid leaking large payloads
-            : String(error).substring(0, 200);
-        console.error(`API error on ${pathname}:`, sanitizedMessage);
-        sendError(res, 500, error instanceof Error ? error.message : "Internal server error");
+        const status = upstreamStatus(error);
+        if (error && typeof error === "object" && ("writeError" in error || "kind" in error)) {
+          sendJson(res, status, error);
+        } else {
+          sendError(res, status, error instanceof RequestError ? error.message : `API request failed (HTTP ${status})`);
+        }
       }
       return;
     }
 
-    // Serve static files
-    await serveStatic(req, res, pathname, config.distPath);
+    // Only the browser bundle is public.
+    if (pathname.startsWith("/launcher/") || !["GET", "HEAD"].includes(req.method ?? "")) {
+      sendError(res, 404, "Not found");
+      return;
+    }
+    if (config.serveDevelopmentAssets) config.serveDevelopmentAssets(req, res);
+    else await serveStatic(req, res, pathname, config.distPath);
   });
 
   return server;
 };
+
+function sessionInfo(state: LauncherState) {
+  return {
+    sessionId: state.session.sessionId, mode: "launcher", namespace: null,
+    context: state.context && { contextName: state.context.contextName, clusterDisplay: state.context.clusterDisplay },
+    gatewayUrl: state.gateway?.baseUrl ?? null,
+  };
+}
+
+function configuredGateway(value?: string | null) {
+  if (!value) return null;
+  let url;
+  try { url = new URL(value); } catch { throw new RequestError(400, "Invalid gateway origin"); }
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+    throw new RequestError(400, "Enter an HTTP or HTTPS gateway origin");
+  }
+  return { baseUrl: url.origin, discoveredAt: new Date() };
+}
+
+/** Platform status reports the external address for both Route and Ingress. */
+async function discoverGateway(client: K8sClientContext) {
+  try {
+    const response = await client.customApi.listClusterCustomObject({
+      group: "logic.kubesmarts.org", version: "v1", plural: "clusterlogicplatforms", limit: 1,
+    }, {
+      middlewareMergeStrategy: "append",
+      middleware: [{
+        pre: request => { request.setSignal(AbortSignal.timeout(4_000)); return of(request); },
+        post: response => of(response),
+      }],
+    }) as { items: { status?: { gateway?: { url?: string } } }[] };
+    return configuredGateway(response.items[0]?.status?.gateway?.url);
+  } catch {
+    // A missing platform or lack of platform list permission still allows connecting.
+    return null;
+  }
+}
 
 /** Handle API requests. */
 const handleApiRequest = async (
@@ -165,49 +231,44 @@ const handleApiRequest = async (
   res: http.ServerResponse,
   pathname: string,
   state: LauncherState,
-  k8sClient: K8sClientContext
+  k8sClient: K8sClientContext,
+  requestBody: unknown
 ): Promise<void> => {
   // Session info
   if (pathname === "/api/session" && req.method === "GET") {
-    sendJson(res, 200, {
-      sessionId: state.session.sessionId,
-      mode: "launcher",
-      context: state.context
-        ? {
-            contextName: state.context.contextName,
-            clusterDisplay: state.context.clusterDisplay,
-          }
-        : null,
-      namespace: null, // Set by browser based on user selection
-    });
+    sendJson(res, 200, sessionInfo(state));
     return;
   }
 
   // List contexts
   if (pathname === "/api/contexts" && req.method === "GET") {
-    const { listContexts } = await import("./kubernetes-client.js");
     const contexts = listContexts();
     sendJson(res, 200, contexts);
     return;
   }
 
+  if (pathname === "/api/discovery" && req.method === "GET") {
+    sendJson(res, 200, await k8sClient.customApi.getAPIResources({ group: "logic.kubesmarts.org", version: "v1" }));
+    return;
+  }
+
   // Kubernetes API
   if (pathname === "/api/k8s/get" && req.method === "POST") {
-    const body = (await readBody(req)) as GetRequest;
+    const body = requestBody as GetRequest;
     const result = await handleGet(k8sClient, body);
     sendJson(res, 200, result);
     return;
   }
 
   if (pathname === "/api/k8s/list" && req.method === "POST") {
-    const body = (await readBody(req)) as ListRequest;
+    const body = requestBody as ListRequest;
     const result = await handleList(k8sClient, body);
     sendJson(res, 200, result);
     return;
   }
 
   if (pathname === "/api/k8s/write" && req.method === "POST") {
-    const body = (await readBody(req)) as WriteRequest;
+    const body = requestBody as WriteRequest;
     const result = await handleWrite(k8sClient, body);
     sendJson(res, 200, result);
     return;
@@ -250,7 +311,7 @@ const handleApiRequest = async (
       sendError(res, 400, "Invalid definition path");
       return;
     }
-    const [namespace, name, version] = parts;
+    const [namespace, name, version] = parts.map(decodeURIComponent);
     const result = await handleGetDefinition(state.gateway, namespace, name, version);
     sendJson(res, 200, result);
     return;
@@ -283,7 +344,7 @@ const handleApiRequest = async (
       sendError(res, 400, "Missing instance ID");
       return;
     }
-    const result = await handleGetInstance(state.gateway, id);
+    const result = await handleGetInstance(state.gateway, decodeURIComponent(id));
     sendJson(res, 200, result);
     return;
   }
@@ -293,7 +354,7 @@ const handleApiRequest = async (
       sendError(res, 503, "Gateway not configured");
       return;
     }
-    const body = (await readBody(req)) as { href: string; input: unknown };
+    const body = requestBody as { href: string; input: unknown };
     const result = await handleExecute(state.gateway, body.href, body.input);
     sendJson(res, 200, result);
     return;
@@ -304,7 +365,7 @@ const handleApiRequest = async (
       sendError(res, 503, "Gateway not configured");
       return;
     }
-    const body = (await readBody(req)) as { href: string; input: unknown };
+    const body = requestBody as { href: string; input: unknown };
     const result = await handleExecuteSync(state.gateway, body.href, body.input);
     sendJson(res, 200, result);
     return;
@@ -315,7 +376,7 @@ const handleApiRequest = async (
       sendError(res, 503, "Gateway not configured");
       return;
     }
-    const body = (await readBody(req)) as { linkHref: string; instanceId: string };
+    const body = requestBody as { linkHref: string; instanceId: string };
     const result = await handleInstanceAction(state.gateway, body.linkHref, body.instanceId);
     sendJson(res, 200, result);
     return;
@@ -353,6 +414,10 @@ const serveStatic = async (
       ".jpg": "image/jpeg",
       ".svg": "image/svg+xml",
       ".ico": "image/x-icon",
+      ".woff2": "font/woff2",
+      ".woff": "font/woff",
+      ".ttf": "font/ttf",
+      ".wasm": "application/wasm",
     };
     const contentType = contentTypeMap[ext] || "application/octet-stream";
 
@@ -360,15 +425,7 @@ const serveStatic = async (
     res.writeHead(200, { "Content-Type": contentType });
     res.end(content);
   } catch {
-    // File not found - serve index.html for SPA routing
-    try {
-      const indexPath = path.join(distPath, "index.html");
-      const content = await fs.promises.readFile(indexPath);
-      res.writeHead(200, { "Content-Type": "text/html" });
-      res.end(content);
-    } catch {
-      res.writeHead(404);
-      res.end("Not found");
-    }
+    res.writeHead(404);
+    res.end("Not found");
   }
 };

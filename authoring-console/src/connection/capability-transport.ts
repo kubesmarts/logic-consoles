@@ -33,6 +33,7 @@ interface SelfSubjectAccessReviewStatus {
 interface SelfSubjectAccessReview {
   readonly apiVersion: string;
   readonly kind: string;
+  readonly metadata: { readonly name: string };
   readonly spec: SelfSubjectAccessReviewSpec;
   readonly status?: SelfSubjectAccessReviewStatus;
 }
@@ -48,6 +49,7 @@ export const createCapabilityTransport = (
     const review: SelfSubjectAccessReview = {
       apiVersion: "authorization.k8s.io/v1",
       kind: "SelfSubjectAccessReview",
+      metadata: {name: ""},
       spec: {
         resourceAttributes: {
           group: attributes.group,
@@ -61,7 +63,7 @@ export const createCapabilityTransport = (
     try {
       // Create the access review
       const candidate: WriteCandidate<SelfSubjectAccessReviewSpec> = {
-        object: review as never,
+        object: review,
       };
 
       const result = await k8sTransport.create<

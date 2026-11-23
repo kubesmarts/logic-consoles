@@ -12,11 +12,12 @@ import {
   Checkbox,
   FormSelect,
   FormSelectOption,
-  TextArea,
+  Button,
   FormHelperText,
   HelperText,
   HelperTextItem,
 } from "@patternfly/react-core";
+import { getDefaultValue } from "./schema-utils.ts";
 import type { SupportedJsonSchema, JsonSchemaProperty } from "./types.ts";
 
 export interface SchemaFormProps {
@@ -140,49 +141,35 @@ const SchemaField = ({ name, property, value, onChange, required }: SchemaFieldP
   }
 
   if (property.type === "object") {
-    // Nested object: render as JSON text area for now
-    const jsonValue = typeof value === "object" && value !== null
-      ? JSON.stringify(value, null, 2)
-      : "{}";
+    const fields = value !== null && typeof value === "object" && !Array.isArray(value)
+      ? value as Record<string, unknown> : {};
     return (
-      <FormGroup label={`${label} (object)`} isRequired={required} fieldId={name}>
-        <TextArea
-          id={name}
-          value={jsonValue}
-          onChange={(_event, v) => {
-            try {
-              onChange(JSON.parse(v));
-            } catch {
-              // Keep the string until it's valid JSON
-              onChange(v);
-            }
-          }}
-          aria-label={label}
-          rows={4}
-        />
-      </FormGroup>
+      <fieldset>
+        <legend>{label}</legend>
+        {Object.entries(property.properties ?? {}).map(([key, child]) => (
+          <SchemaField key={key} name={name + "." + key} property={child} value={fields[key]}
+            required={property.required?.includes(key) ?? false}
+            onChange={(next) => onChange({ ...fields, [key]: next })} />
+        ))}
+      </fieldset>
     );
   }
 
-  if (property.type === "array") {
-    // Array: render as JSON text area
-    const jsonValue = Array.isArray(value) ? JSON.stringify(value, null, 2) : "[]";
+  if (property.type === "array" && property.items) {
+    const values: unknown[] = Array.isArray(value) ? value : [];
+    const items = property.items;
     return (
-      <FormGroup label={`${label} (array)`} isRequired={required} fieldId={name}>
-        <TextArea
-          id={name}
-          value={jsonValue}
-          onChange={(_event, v) => {
-            try {
-              onChange(JSON.parse(v));
-            } catch {
-              onChange(v);
-            }
-          }}
-          aria-label={label}
-          rows={4}
-        />
-      </FormGroup>
+      <fieldset>
+        <legend>{label}</legend>
+        {values.map((item, index) => (
+          <div key={index}>
+            <SchemaField name={name + "." + (index + 1)} property={items} value={item} required
+              onChange={(next) => onChange(values.map((old, i) => index === i ? next : old))} />
+            <Button variant="link" onClick={() => onChange(values.filter((_, i) => i !== index))}>Remove {label} item {index + 1}</Button>
+          </div>
+        ))}
+        <Button variant="secondary" onClick={() => onChange([...values, getDefaultValue(items)])}>Add {label} item</Button>
+      </fieldset>
     );
   }
 
@@ -193,7 +180,7 @@ const SchemaField = ({ name, property, value, onChange, required }: SchemaFieldP
 const formatLabel = (name: string): string => {
   return name
     .replace(/([A-Z])/g, " $1")
-    .replace(/_/g, " ")
+    .replace(/[_.]/g, " ")
     .replace(/^./, (str) => str.toUpperCase())
     .trim();
 };

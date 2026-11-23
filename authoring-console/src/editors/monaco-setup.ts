@@ -4,7 +4,7 @@
  * Wires the base editor worker and the YAML language worker as bundled ES-module
  * workers (Vite `?worker` imports), points @monaco-editor/react at the bundled
  * `monaco-editor` instance instead of a CDN, and enables schema-aware YAML with the
- * Open Workflow Specification DSL schema (pinned from upstream main @ 2026-11-20).
+ * Open Workflow Specification DSL schema (pinned to the upstream v1.1.0 tag).
  *
  * This module is imported for its browser behaviour; tests mock @monaco-editor/react
  * and this module so the worker imports are never evaluated under jsdom.
@@ -15,6 +15,9 @@ import { configureMonacoYaml } from "monaco-yaml";
 import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker.js?worker";
 import YamlWorker from "monaco-yaml/yaml.worker.js?worker";
 
+// Configure the loader before the child editor mounts and initializes its loader.
+loader.config({ monaco });
+
 let configured = false;
 
 /**
@@ -23,7 +26,7 @@ let configured = false;
  */
 const loadWorkflowSchema = async (): Promise<unknown | undefined> => {
   try {
-    const response = await fetch("/schemas/workflow-dsl-1.0.0.yaml");
+    const response = await fetch("/schemas/workflow-dsl-1.1.0.yaml");
     if (!response.ok) return undefined;
     const yamlText = await response.text();
     // Parse YAML to JSON for monaco-yaml (it expects JSON schema)
@@ -47,7 +50,6 @@ export const setupMonaco = async (): Promise<void> => {
     },
   };
 
-  loader.config({ monaco });
 
   // Load the OWS DSL schema asynchronously
   const dslSchema = await loadWorkflowSchema();
@@ -61,7 +63,7 @@ export const setupMonaco = async (): Promise<void> => {
       ? [
           {
             uri: "https://open-workflow-specification.org/schemas/1.1.0/workflow.yaml",
-            fileMatch: ["**/*.yaml", "**/*.yml"],
+            fileMatch: ["**/*.workflow.yaml"],
             schema: dslSchema,
           },
         ]

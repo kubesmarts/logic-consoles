@@ -6,7 +6,7 @@
  * E1 does NOT publish — that is E2. This workspace produces a finished draft that E2
  * can publish via the hand-off hook (`useAuthoringContext`).
  */
-import { useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useBlocker } from "react-router-dom";
 import {
   Button,
@@ -55,13 +55,28 @@ export const AuthoringWorkspace = (): ReactNode => {
   } = useAuthoringState();
 
   const [showExampleCatalog, setShowExampleCatalog] = useState(false);
+  const [showDraftMenu, setShowDraftMenu] = useState(false);
+  const authorizedPath = useRef<string | undefined>(undefined);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
   const [lastSaveOutcome, setLastSaveOutcome] = useState<DraftSaveOutcome | undefined>(undefined);
 
+  const drafts = useMemo(() => storage.listDrafts(), [storage, lastSaveOutcome, currentDraftId]);
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const protect = (event: BeforeUnloadEvent) => {event.preventDefault(); event.returnValue = "";};
+    window.addEventListener("beforeunload", protect);
+    return () => window.removeEventListener("beforeunload", protect);
+  }, [hasUnsavedChanges]);
+  // Saves and explicitly confirmed resets keep their own navigation intent.
+  function replaceDraftPath(path: string) {
+    authorizedPath.current = path;
+    navigate(path, {replace: true});
+    authorizedPath.current = undefined;
+  }
   // Guard against unsaved work on navigation
-  useBlocker(({ currentLocation, nextLocation }) =>
-    shouldBlockNavigation(hasUnsavedChanges, currentLocation.pathname, nextLocation.pathname),
+  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
+    nextLocation.pathname !== authorizedPath.current && shouldBlockNavigation(hasUnsavedChanges, currentLocation.pathname, nextLocation.pathname),
   );
 
   const handleSaveDraft = (): void => {
@@ -73,7 +88,7 @@ export const AuthoringWorkspace = (): ReactNode => {
       workflowYaml,
       target: {
         contextName: session.context.contextName,
-        namespace: "default",
+        namespace: parsedIdentity?.namespace ?? session.namespace ?? "default",
       },
       createdAt: currentDraftId
         ? storage.getDraft(currentDraftId)?.createdAt ?? new Date().toISOString()
@@ -90,7 +105,7 @@ export const AuthoringWorkspace = (): ReactNode => {
       setSaveError(undefined);
       // Update URL if this is a new draft
       if (!currentDraftId) {
-        navigate(`/authoring/${id}`, { replace: true });
+        replaceDraftPath(`/authoring/${id}`);
       }
     } else {
       const errorMsg =
@@ -108,7 +123,7 @@ export const AuthoringWorkspace = (): ReactNode => {
       workflowYaml,
       target: {
         contextName: session.context.contextName,
-        namespace: "default",
+        namespace: parsedIdentity?.namespace ?? session.namespace ?? "default",
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -126,7 +141,11 @@ export const AuthoringWorkspace = (): ReactNode => {
   const handleRemoveDraft = (): void => {
     if (currentDraftId) {
       storage.removeDraft(currentDraftId);
-      navigate("/authoring");
+      setWorkflowYaml(BLANK_WORKFLOW_TEMPLATE);
+      setOriginalYaml(BLANK_WORKFLOW_TEMPLATE);
+      setCurrentDraftId(undefined);
+      setLastSaveOutcome(undefined);
+      replaceDraftPath("/authoring");
     }
   };
 
@@ -140,7 +159,7 @@ export const AuthoringWorkspace = (): ReactNode => {
     setCurrentDraftId(undefined);
     setSaveError(undefined);
     setLastSaveOutcome(undefined);
-    navigate("/authoring");
+    replaceDraftPath("/authoring");
   };
 
   const handleSelectExample = (yaml: string): void => {
@@ -153,7 +172,7 @@ export const AuthoringWorkspace = (): ReactNode => {
     setCurrentDraftId(undefined);
     setSaveError(undefined);
     setLastSaveOutcome(undefined);
-    navigate("/authoring");
+    replaceDraftPath("/authoring");
   };
 
   const handleInsertSnippet = (): void => {
@@ -164,6 +183,10 @@ export const AuthoringWorkspace = (): ReactNode => {
 
   return (
     <>
+      {blocker.state === "blocked" && <Alert isInline variant="warning" title="Leave this draft with unsaved changes?">
+        <Button variant="secondary" onClick={blocker.reset}>Keep editing</Button>
+        <Button variant="link" onClick={blocker.proceed}>Leave draft</Button>
+      </Alert>}
       <PageSection>
         <Toolbar>
           <ToolbarContent>
@@ -190,6 +213,16 @@ export const AuthoringWorkspace = (): ReactNode => {
                 Start from example
               </Button>
             </ToolbarItem>
+            {drafts.length > 0 && <ToolbarItem>
+              <Dropdown isOpen={showDraftMenu} onOpenChange={setShowDraftMenu}
+                toggle={ref => <MenuToggle ref={ref} onClick={() => setShowDraftMenu(!showDraftMenu)}>Open saved draft</MenuToggle>}>
+                <DropdownList>{drafts.map(draft => <DropdownItem key={draft.id}
+                  description={`${draft.target.contextName} · ${draft.target.namespace}`}
+                  onClick={() => {setShowDraftMenu(false); navigate(`/authoring/${encodeURIComponent(draft.id)}`);}}>
+                  {draft.title}
+                </DropdownItem>)}</DropdownList>
+              </Dropdown>
+            </ToolbarItem>}
             <ToolbarItem>
               <Dropdown
                 isOpen={showActionsMenu}

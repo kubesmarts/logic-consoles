@@ -16,7 +16,7 @@ import {
   HelperText,
   HelperTextItem,
 } from "@patternfly/react-core";
-import type { PlatformSetupDraft, VectorConfig } from "../types.ts";
+import { platformVectorConfig, type PlatformSetupDraft, type VectorConfig } from "../types.ts";
 
 interface VectorStepProps {
   readonly draft: PlatformSetupDraft;
@@ -24,10 +24,7 @@ interface VectorStepProps {
 }
 
 export const VectorStep = ({ draft, onUpdate }: VectorStepProps): ReactNode => {
-  const vector = draft.vector || {
-    watchNamespaces: [draft.targetNamespace],
-    debugEvents: false,
-  };
+  const vector = platformVectorConfig(draft);
 
   const handleUpdate = (updates: Partial<VectorConfig>): void => {
     onUpdate({

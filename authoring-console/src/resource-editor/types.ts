@@ -103,4 +103,5 @@ export interface ReconciliationState<TStatus = unknown> {
   readonly observed: KubeObject<unknown, TStatus> | null;
   /** true when observedGeneration matches metadata.generation. */
   readonly reconciled: boolean;
+  readonly error?: string;
 }

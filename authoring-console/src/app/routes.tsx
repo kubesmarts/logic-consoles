@@ -6,8 +6,9 @@
  * editing this file, so the shell stays the single integrator of routes.
  */
 import { lazy, Suspense, type ReactNode } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { Bullseye, Spinner } from "@patternfly/react-core";
+import { AuthoringProvider } from "../authoring/AuthoringProvider.tsx";
 import { WorkflowsPage } from "./pages/WorkflowsPage.tsx";
 import { TopologyPage } from "./pages/TopologyPage.tsx";
 import { RuntimesPage } from "./pages/RuntimesPage.tsx";
@@ -44,9 +45,11 @@ export const AppRoutes = ({ featureRoutes = [] }: { readonly featureRoutes?: rea
       <Route path="/platform" element={<PlatformPage />} />
       <Route path="/compatibility" element={<CompatibilityPage />} />
       <Route path="/spike" element={<SpikePage />} />
+      <Route element={<AuthoringProvider><Outlet /></AuthoringProvider>}>
       {featureRoutes.map((route) => (
         <Route key={route.path} path={route.path} element={route.element} />
       ))}
+      </Route>
     </Routes>
   </Suspense>
 );

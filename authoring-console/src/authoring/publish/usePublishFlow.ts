@@ -77,7 +77,11 @@ export const buildPublishCandidate = async (
   let flow: WorkflowDocument;
   try {
     const { parse } = await import("yaml");
-    flow = parse(workflowYaml) as WorkflowDocument;
+    const parsed = parse(workflowYaml) as WorkflowDocument;
+    if (!parsed?.document || parsed.document.name !== workflowName) {
+      throw new Error("Workflow name differs from the selected definition");
+    }
+    flow = { ...parsed, document: { ...parsed.document, namespace, version } };
   } catch (error) {
     throw new Error(`Failed to parse workflow YAML: ${String(error)}`);
   }
@@ -110,9 +114,11 @@ export const buildPublishCandidate = async (
     apiVersion: `${LOGIC_GROUP}/${LOGIC_VERSION}`,
     kind: LogicKinds.LogicFlowDefinition,
     metadata: {
+      ...deployed?.metadata,
       name: crName,
       namespace,
       labels: {
+        ...deployed?.metadata.labels,
         [OperatorLabels.workflowName]: workflowName,
         [OperatorLabels.workflowVersion]: version,
         [OperatorLabels.runtimeRef]: runtimeName,
@@ -122,6 +128,7 @@ export const buildPublishCandidate = async (
         : {}),
     },
     spec: {
+      ...deployed?.spec,
       runtimeRef: { name: runtimeName },
       flow,
     },

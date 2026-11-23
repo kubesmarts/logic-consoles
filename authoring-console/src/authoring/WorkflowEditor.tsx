@@ -6,7 +6,7 @@
  * discarded or reformatted). The portable workflow YAML is kept separate from
  * Kubernetes metadata.
  */
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
 import {
   Card,
   CardBody,
@@ -67,17 +67,11 @@ export const WorkflowEditor = ({
   onChange,
   height = "600px",
 }: WorkflowEditorProps): ReactNode => {
-  const [validDocument, setValidDocument] = useState<WorkflowDocument | undefined>(
-    validateWorkflowYaml(value),
-  );
+  const validDocument = useMemo(() => validateWorkflowYaml(value), [value]);
   const [isNarrowScreen, setIsNarrowScreen] = useState(
     window.innerWidth < NARROW_SCREEN_THRESHOLD,
   );
   const [activeTab, setActiveTab] = useState<"editor" | "diagram">("editor");
-
-  useEffect(() => {
-    setValidDocument(validateWorkflowYaml(value));
-  }, [value]);
 
   useEffect(() => {
     const handleResize = (): void => {
@@ -94,6 +88,7 @@ export const WorkflowEditor = ({
       <CardBody>
         <YamlEditor
           value={value}
+          workflowSchema
           readOnly={false}
           onChange={onChange}
           ariaLabel="Workflow YAML editor"

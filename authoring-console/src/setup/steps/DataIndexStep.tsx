@@ -43,7 +43,7 @@ export const DataIndexStep = ({ draft, onUpdate }: DataIndexStepProps): ReactNod
         variant={AlertVariant.info}
         title="Data Index requires PostgreSQL"
       >
-        This form collects references to an existing PostgreSQL deployment. The console does not provision databases.
+        This form collects references to an existing PostgreSQL deployment. For a development cluster, see the <a href="https://github.com/kubesmarts/logic-operator/blob/b9a71660267f0cad794b95e010569b280a932da8/config/samples/persistence/postgresql.yaml">operator’s PostgreSQL sample</a>.
       </Alert>
 
       <div style={{ marginTop: "1.5rem", marginBottom: "1.5rem" }}>

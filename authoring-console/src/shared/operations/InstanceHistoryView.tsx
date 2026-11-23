@@ -23,6 +23,7 @@ import {
   EmptyState,
   EmptyStateBody,
   Spinner,
+  TextInput,
   Toolbar,
   ToolbarContent,
   ToolbarItem,
@@ -34,6 +35,9 @@ import type { UseQueryResult } from "@tanstack/react-query";
 export interface InstanceHistoryViewProps {
   readonly versionKey: WorkflowVersionKey;
   readonly gateway: GatewayTransport;
+  readonly sessionId?: string;
+  readonly acceptedId?: string;
+  readonly renderActions?: (instance: WorkflowInstance, refresh: () => void) => ReactNode;
 }
 
 interface InstanceHistoryState {
@@ -41,32 +45,34 @@ interface InstanceHistoryState {
   readonly retrying: boolean;
 }
 
-export const InstanceHistoryView = ({ versionKey, gateway }: InstanceHistoryViewProps): ReactNode => {
+export const InstanceHistoryView = ({ versionKey, gateway, sessionId, acceptedId, renderActions }: InstanceHistoryViewProps): ReactNode => {
   const [viewState, setViewState] = useState<InstanceHistoryState>({
-    selectedInstanceId: null,
+    selectedInstanceId: acceptedId ?? null,
     retrying: false,
   });
 
+  const [status, setStatus] = useState("");
   const filter: InstanceFilter = {
     namespace: versionKey.namespace,
     name: versionKey.workflowName,
     version: versionKey.version,
+    ...(status && { status }),
   };
 
   const query = useQuery({
-    queryKey: [versionKey.namespace, versionKey.workflowName, versionKey.version, "instances"],
+    queryKey: [sessionId, versionKey.namespace, versionKey.workflowName, versionKey.version, status, "instances"],
     queryFn: ({ signal }) => gateway.listInstances(filter, signal),
   });
 
   const detailQuery = useQuery({
-    queryKey: [viewState.selectedInstanceId, "instance-detail"],
+    queryKey: [sessionId, versionKey.namespace, versionKey.workflowName, versionKey.version, viewState.selectedInstanceId, "instance-detail"],
     queryFn: ({ signal }) => gateway.getInstance(viewState.selectedInstanceId!, signal),
     enabled: !!viewState.selectedInstanceId,
   });
 
   const handleRetry = (): void => {
     setViewState((s) => ({ ...s, retrying: true }));
-    query.refetch().finally(() => {
+    Promise.all([query.refetch(), viewState.selectedInstanceId && detailQuery.refetch()]).finally(() => {
       setViewState((s) => ({ ...s, retrying: false }));
     });
   };
@@ -81,6 +87,13 @@ export const InstanceHistoryView = ({ versionKey, gateway }: InstanceHistoryView
 
   return (
     <>
+      <TextInput aria-label="Filter instances by status" placeholder="Filter by status" value={status}
+        onChange={(_event, value) => setStatus(value)} />
+      {acceptedId && query.isSuccess && !status && !query.data.some((row) => row.id === acceptedId) && (
+        <p>Instance {acceptedId} was accepted and may still be waiting for indexing.
+          <Button variant="link" onClick={handleRetry}>Retry history</Button>
+        </p>
+      )}
       {query.isPending ? (
         <Bullseye>
           <Spinner aria-label="Loading instance history" />
@@ -134,26 +147,32 @@ export const InstanceHistoryView = ({ versionKey, gateway }: InstanceHistoryView
               ))}
             </Tbody>
           </Table>
-          {viewState.selectedInstanceId && (
-            <Drawer
-              isExpanded={viewState.selectedInstanceId !== null}
-              onExpand={() => {}}
-              position="right"
-            >
-              <DrawerContent
-                panelContent={
-                  <InstanceDetailDrawer
-                    instanceId={viewState.selectedInstanceId}
-                    detailQuery={detailQuery}
-                    onClose={handleDrawerClose}
-                  />
-                }
-              >
-                <DrawerContentBody>{/* Main content */}</DrawerContentBody>
-              </DrawerContent>
-            </Drawer>
-          )}
         </>
+      )}
+      {viewState.selectedInstanceId && (
+        <Drawer
+          isExpanded={viewState.selectedInstanceId !== null}
+          onExpand={() => {}}
+          position="right"
+        >
+          <DrawerContent
+            panelContent={
+              <InstanceDetailDrawer
+                instanceId={viewState.selectedInstanceId}
+                detailQuery={detailQuery}
+                onClose={handleDrawerClose}
+                actions={detailQuery.data && detailQuery.data.id === viewState.selectedInstanceId &&
+                  detailQuery.data.name === versionKey.workflowName && detailQuery.data.namespace === versionKey.namespace &&
+                  detailQuery.data.version === versionKey.version && renderActions?.(detailQuery.data, () => {
+                    void detailQuery.refetch();
+                    void query.refetch();
+                  })}
+              />
+            }
+          >
+            <DrawerContentBody>{/* Main content */}</DrawerContentBody>
+          </DrawerContent>
+        </Drawer>
       )}
     </>
   );
@@ -163,9 +182,10 @@ interface InstanceDetailDrawerProps {
   readonly instanceId: string;
   readonly detailQuery: UseQueryResult<WorkflowInstance, Error>;
   readonly onClose: () => void;
+  readonly actions?: ReactNode;
 }
 
-const InstanceDetailDrawer = ({ instanceId, detailQuery, onClose }: InstanceDetailDrawerProps): ReactNode => {
+const InstanceDetailDrawer = ({ instanceId, detailQuery, onClose, actions }: InstanceDetailDrawerProps): ReactNode => {
   return (
     <DrawerPanelContent isResizable>
       <DrawerHead>
@@ -216,6 +236,7 @@ const InstanceDetailDrawer = ({ instanceId, detailQuery, onClose }: InstanceDeta
                 )}
               </Tbody>
             </Table>
+            {actions}
           </div>
         ) : null}
       </DrawerContentBody>
@@ -246,7 +267,7 @@ const InstanceHistoryErrorState = ({ error, onRetry, retrying }: InstanceHistory
     return (
       <EmptyState titleText="Index pending" headingLevel="h2" status="warning">
         <EmptyStateBody>
-          The Data Index is still being populated. Instances may not be visible yet. Try again in a moment.
+          The gateway cannot discover a ready Data Index yet. Retry history when the index is available.
         </EmptyStateBody>
         <Button onClick={onRetry} isLoading={retrying}>
           Retry

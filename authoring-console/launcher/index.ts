@@ -9,15 +9,13 @@ import * as crypto from "node:crypto";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { exec } from "node:child_process";
-import { createServer } from "./server.js";
+import { rememberPort, selectedPort } from "./port.js";
+import { createServer, type ServerConfig } from "./server.js";
 import { createK8sClient, getCurrentContextName, getClusterDisplay } from "./kubernetes-client.js";
 import type { LauncherState } from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-/** Default configuration. */
-const DEFAULT_PORT = 8080;
 
 /** Generate a random session ID. */
 const generateSessionId = (): string => {
@@ -83,13 +81,12 @@ const main = async (): Promise<void> => {
     gateway: null, // Will be set when user discovers/enters gateway URL
   };
 
-  console.log(`Session ID: ${state.session.sessionId}\n`);
-
-  // Server configuration
-  const port = parseInt(process.env.PORT || String(DEFAULT_PORT), 10);
+  const args = process.argv.slice(2);
+  const development = args[0] === "--dev";
+  const { port, remember } = await selectedPort(development ? args.slice(1) : args);
   const distPath = path.resolve(__dirname, "../../dist");
 
-  const config = {
+  const config: ServerConfig = {
     port,
     distPath,
   };
@@ -97,7 +94,21 @@ const main = async (): Promise<void> => {
   // Create and start server
   const server = createServer(config, state, k8sClient);
 
+  const vite = development ? await (await import("vite")).createServer({
+    server: { middlewareMode: true, hmr: { server }, cors: false },
+    appType: "spa",
+  }) : undefined;
+  if (vite) config.serveDevelopmentAssets = vite.middlewares;
+
+  server.on("error", (error: NodeJS.ErrnoException) => {
+    console.error(error.code === "EADDRINUSE"
+      ? `Port ${port} is in use. Release it and retry, or run npm start -- --port PORT. Saved drafts belong to their original address.`
+      : `Launcher failed to listen on 127.0.0.1:${port} (${error.code ?? "network error"})`);
+    void vite?.close();
+    process.exitCode = 1;
+  });
   server.listen(port, "127.0.0.1", () => {
+    if (remember) void rememberPort(port).catch(() => console.warn("Could not save the port preference."));
     const url = `http://127.0.0.1:${port}`;
     console.log(`Server running at ${url}`);
     console.log(`\nOpening browser...`);
@@ -105,12 +116,13 @@ const main = async (): Promise<void> => {
     console.log("Press Ctrl+C to stop the launcher.\n");
 
     // Open browser after a short delay
-    setTimeout(() => openBrowser(url), 500);
+    if (!process.env.NO_OPEN) setTimeout(() => openBrowser(url), 500);
   });
 
   // Handle graceful shutdown
   const shutdown = (): void => {
     console.log("\nShutting down launcher...");
+    void vite?.close();
     server.close(() => {
       console.log("Server closed");
       process.exit(0);

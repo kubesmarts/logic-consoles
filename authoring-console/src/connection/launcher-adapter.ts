@@ -63,10 +63,14 @@ const fetchLauncher = async <T>(
     const error = await response.json().catch(() => ({ error: response.statusText }));
 
     // Check if response indicates session/context mismatch
-    if (response.status === 409) {
+    if (response.status === 409 && (error.kind === "session-changed" || error.error === "Session mismatch")) {
       throw new Error("Session or context changed - request invalidated");
     }
 
+    if (path.startsWith("/api/k8s/")) {
+      throw Object.assign(new Error(error.message ?? error.error ?? `Kubernetes API returned HTTP ${response.status}.`),
+        {...error, status: response.status, statusCode: response.status});
+    }
     throw error;
   }
 

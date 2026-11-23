@@ -26,9 +26,9 @@ const emptyEnvelope = (): StoredEnvelope => ({
 
 export const createConsoleStorage = (storage: Storage = window.localStorage): ConsoleStorage => {
   const read = (): StoredEnvelope => {
-    const raw = storage.getItem(STORAGE_KEY);
-    if (!raw) return emptyEnvelope();
     try {
+      const raw = storage.getItem(STORAGE_KEY);
+      if (!raw) return emptyEnvelope();
       const parsed = JSON.parse(raw) as StoredEnvelope;
       if (parsed.schemaVersion !== STORAGE_SCHEMA_VERSION) {
         // Unknown/older format: discard rather than risk mis-reading persisted state.

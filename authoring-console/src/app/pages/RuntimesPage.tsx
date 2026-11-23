@@ -49,10 +49,15 @@ interface RuntimeStatus {
 }
 
 export const RuntimesPage = (): ReactNode => {
-  const { session, kubernetes } = useConsole();
+  const { session, kubernetes, capabilities } = useConsole();
   const defaultNamespace = session.namespace ?? "default";
   const [customNamespace, setCustomNamespace] = useState("");
   const [targetNamespace, setTargetNamespace] = useState(defaultNamespace);
+  const [editing, setEditing] = useState<KubeObject<LogicFlowRuntimeSpec, RuntimeStatus>>();
+  const updateAccess = useQuery({
+    queryKey: [session.sessionId, targetNamespace, "update-runtime"],
+    queryFn: ({signal}) => capabilities.canI({group: LOGIC_GROUP, resource: "logicflowruntimes", verb: "update", namespace: targetNamespace}, signal),
+  });
   const [showWizard, setShowWizard] = useState(false);
   const [selectedRuntime, setSelectedRuntime] = useState<KubeObject<
     LogicFlowRuntimeSpec,
@@ -90,6 +95,7 @@ export const RuntimesPage = (): ReactNode => {
   }, [customNamespace]);
 
   const handleCreateClick = (): void => {
+    setEditing(undefined);
     setShowWizard(true);
   };
 
@@ -204,6 +210,7 @@ export const RuntimesPage = (): ReactNode => {
                     </Td>
                     <Td dataLabel="Status">{phase}</Td>
                     <Td dataLabel="Actions">
+                      {updateAccess.data?.decision === "allowed" && <Button variant="link" onClick={() => { setEditing(runtime); setShowWizard(true); }}>Edit persistence</Button>}
                       <Button variant="link" onClick={() => handleViewDetails(runtime)}>
                         Details
                       </Button>
@@ -231,9 +238,9 @@ export const RuntimesPage = (): ReactNode => {
         variant={ModalVariant.large}
         isOpen={showWizard}
         onClose={handleWizardCancel}
-        aria-label="Create runtime wizard"
+        aria-label={editing ? "Edit runtime persistence" : "Create runtime wizard"}
       >
-        <RuntimeSetupWizard onComplete={handleWizardComplete} onCancel={handleWizardCancel} />
+        <RuntimeSetupWizard key={editing?.metadata.uid ?? editing?.metadata.name ?? "create"} editing={editing} onComplete={handleWizardComplete} onCancel={handleWizardCancel} />
       </Modal>
 
       {/* Details modal */}

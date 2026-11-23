@@ -94,8 +94,8 @@ type DefinitionObject = KubeObject<LogicFlowDefinitionSpec, LogicFlowDefinitionS
 export interface WorkflowVersionRow {
   readonly version: WorkflowVersionKey;
   /** Actual CR name (may differ from workflowName). */
-  readonly crName: string;
-  readonly resource: ResourceRef;
+  readonly crName: string | null;
+  readonly resource: ResourceRef | null;
   readonly runtimeName: string;
 }
 
@@ -122,9 +122,10 @@ export const buildFamilies = (
   definitions: readonly DefinitionObject[],
   namespace: string,
 ): readonly WorkflowFamily[] => {
-  const crByKey = new Map<string, DefinitionObject>();
+  const crByKey = new Map<string, DefinitionObject | null>();
   for (const cr of definitions) {
-    crByKey.set(crLabelKey(cr), cr);
+    const key = crLabelKey(cr);
+    crByKey.set(key, crByKey.has(key) ? null : cr);
   }
 
   const families = new Map<string, WorkflowFamily & { versions: WorkflowVersionRow[] }>();
@@ -138,8 +139,8 @@ export const buildFamilies = (
     const familyKeyString = workflowKeyToString(versionKey);
     const row: WorkflowVersionRow = {
       version: versionKey,
-      crName: cr?.metadata.name ?? entry.name,
-      resource: cr ? resourceRefFor(cr) : { gvk: DEFINITION_GVK, name: entry.name, namespace: entry.namespace },
+      crName: cr?.metadata.name ?? null,
+      resource: cr ? resourceRefFor(cr) : null,
       runtimeName: cr?.spec?.runtimeRef.name ?? "",
     };
     const existing = families.get(familyKeyString);
@@ -160,17 +161,24 @@ export const buildFamilies = (
   }));
 };
 
-export const useWorkflowFamilies = (): UseQueryResult<readonly WorkflowFamily[]> => {
+export const useWorkflowFamilies = (selectedNamespace?: string): UseQueryResult<readonly WorkflowFamily[]> => {
   const { session, gateway, kubernetes } = useConsole();
-  const namespace = session.namespace ?? "default";
+  const namespace = selectedNamespace ?? session.namespace ?? "default";
   return useQuery({
     queryKey: [session.sessionId, session.context.contextName, "families", namespace],
     queryFn: async ({ signal }) => {
       const [catalog, list] = await Promise.all([
         gateway.listDefinitions(signal),
-        kubernetes.list<LogicFlowDefinitionSpec, LogicFlowDefinitionStatus>(DEFINITION_GVK, { namespace }, signal),
+        kubernetes.list<LogicFlowDefinitionSpec, LogicFlowDefinitionStatus>(DEFINITION_GVK, { namespace }, signal)
+          .then((resources) => resources.items)
+          .catch((error: unknown) => {
+            if (signal.aborted) throw error;
+            // Kubernetes supplies optional CR metadata. The gateway independently
+            // authorizes catalog, Run and history through its own identity.
+            return [];
+          }),
       ]);
-      return buildFamilies(catalog, list.items, namespace);
+      return buildFamilies(catalog, list, namespace);
     },
   });
 };

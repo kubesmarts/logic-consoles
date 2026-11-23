@@ -21,7 +21,7 @@ import {
   FlexItem,
 } from "@patternfly/react-core";
 import { ExternalLinkAltIcon } from "@patternfly/react-icons";
-import { EXAMPLES_CATALOG, type WorkflowExample } from "./examples-catalog.ts";
+import { catalogSource, EXAMPLES_CATALOG, type WorkflowExample } from "./examples-catalog.ts";
 
 export interface ExampleCatalogProps {
   readonly isOpen: boolean;
@@ -114,9 +114,9 @@ export const ExampleCatalog = ({
           ))}
         </div>
         <Content component="p" style={{ marginTop: "1rem", fontSize: "0.875rem", color: "var(--pf-t--global--text--color--subtle)" }}>
-          Examples from{" "}
+          Includes examples from{" "}
           <a
-            href="https://github.com/open-workflow-specification/specification/tree/main/examples"
+            href={catalogSource}
             target="_blank"
             rel="noopener noreferrer"
           >

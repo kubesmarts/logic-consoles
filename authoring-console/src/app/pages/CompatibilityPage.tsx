@@ -1,3 +1,5 @@
+import { useQuery } from "@tanstack/react-query";
+import { observeImages, observedVersion } from "../../compatibility/observations.ts";
 /**
  * Compatibility screen: the dev-baseline manifest with tested/detected/source
  * provenance. Shows that no row is certified yet. Drift review and detection logic
@@ -6,7 +8,7 @@
 import type { ReactNode } from "react";
 import {
   Alert,
-  Content,
+  Spinner,
   DescriptionList,
   DescriptionListDescription,
   DescriptionListGroup,
@@ -18,7 +20,11 @@ import { Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
 import { useConsole } from "../ConsoleContext.tsx";
 
 export const CompatibilityPage = (): ReactNode => {
-  const { compatibility } = useConsole();
+  const { compatibility, kubernetes, session } = useConsole();
+  const images = useQuery({
+    queryKey: [session.sessionId, session.context.contextName, "compatibility-images"],
+    queryFn: ({ signal }) => observeImages(kubernetes, signal),
+  });
   return (
     <>
       <PageSection>
@@ -44,13 +50,14 @@ export const CompatibilityPage = (): ReactNode => {
             These are development inputs. No console compatibility row has been certified.
           </Alert>
         )}
-        <Content component="p" />
+        {images.isPending && <Spinner aria-label="Reading cluster images" />}
         <Table aria-label="Compatibility matrix" variant="compact">
           <Thead>
             <Tr>
               <Th>Component</Th>
-              <Th>Tested version</Th>
-              <Th>Detected version</Th>
+              <Th>Development baseline</Th>
+              <Th>Certified version</Th>
+              <Th>Observed image or version</Th>
               <Th>Source</Th>
             </Tr>
           </Thead>
@@ -58,9 +65,10 @@ export const CompatibilityPage = (): ReactNode => {
             {compatibility.entries.map((entry) => (
               <Tr key={entry.component}>
                 <Td dataLabel="Component">{entry.label}</Td>
-                <Td dataLabel="Tested version">{entry.testedVersion ?? "—"}</Td>
-                <Td dataLabel="Detected version">{entry.detectedVersion ?? "Unknown"}</Td>
-                <Td dataLabel="Source">{entry.source}</Td>
+                <Td dataLabel="Development baseline">{entry.baseline ?? "—"}</Td>
+                <Td dataLabel="Certified version">{entry.testedVersion ?? "—"}</Td>
+                <Td dataLabel="Observed image or version" style={{ whiteSpace: "pre-line", overflowWrap: "anywhere" }}>{observedVersion(entry, images.data?.get(entry.component))}</Td>
+                <Td dataLabel="Source">{entry.notes ?? entry.source}</Td>
               </Tr>
             ))}
           </Tbody>

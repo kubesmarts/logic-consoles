@@ -1,3 +1,4 @@
+import type { RuntimePersistence } from "../../types.ts";
 /**
  * Basic runtime configuration: name, namespace, platformRef, persistence mode.
  */
@@ -21,6 +22,8 @@ import type { RuntimeSetupDraft } from "../types.ts";
 interface BasicConfigStepProps {
   readonly draft: RuntimeSetupDraft;
   readonly onChange: (updates: Partial<RuntimeSetupDraft>) => void;
+  readonly editIdentity?: boolean;
+  readonly persistence?: RuntimePersistence;
   readonly platformName?: string;
   readonly activeNamespace: string;
 }
@@ -29,7 +32,7 @@ export const BasicConfigStep = ({
   draft,
   onChange,
   platformName,
-  activeNamespace,
+  activeNamespace, persistence, editIdentity,
 }: BasicConfigStepProps): ReactNode => {
   const handleNameChange = useCallback(
     (_event: React.FormEvent<HTMLInputElement>, value: string) => {
@@ -68,6 +71,7 @@ export const BasicConfigStep = ({
           fieldId="runtime-name"
         >
           <TextInput
+            readOnly={editIdentity}
             id="runtime-name"
             type="text"
             value={draft.name}
@@ -88,6 +92,7 @@ export const BasicConfigStep = ({
           fieldId="runtime-namespace"
         >
           <TextInput
+            readOnly={editIdentity}
             id="runtime-namespace"
             type="text"
             value={draft.namespace}
@@ -112,7 +117,7 @@ export const BasicConfigStep = ({
             onChange={handlePlatformRefChange}
             aria-label="Platform reference"
           >
-            <FormSelectOption value="" label="No platform reference" />
+            <FormSelectOption value="" label="Discover platform automatically" />
             {platformName && (
               <FormSelectOption value={platformName} label={platformName} />
             )}
@@ -143,7 +148,7 @@ export const BasicConfigStep = ({
             label="PlatformDB (persistent storage)"
             description="Workflows persist to the platform database. Requires platform DB configuration."
             isChecked={draft.persistenceMode === "PlatformDB"}
-            onChange={() => onChange({ persistenceMode: "PlatformDB" })}
+            onChange={() => onChange({ persistenceMode: "PlatformDB", platformRef: draft.platformRef || platformName })}
           />
           <FormHelperText>
             <HelperText>
@@ -159,8 +164,15 @@ export const BasicConfigStep = ({
             isInline
             style={{ marginTop: "1rem" }}
           >
-            PlatformDB persistence requires the platform database to be configured in the ClusterLogicPlatform.
-            Ensure the platform database is available before deploying this runtime.
+            {platformName && (!draft.platformRef || draft.platformRef === platformName) ? <>
+              <p>Linked platform: {platformName}</p>
+              {persistence?.runtime?.postgresql ? <>
+                <p>Runtime schema: {persistence.runtime.postgresql.serviceRef?.databaseSchema || "Database default"}</p>
+                <p>Quartz schema: {persistence.quartz?.postgresql
+                  ? persistence.quartz.postgresql.serviceRef?.databaseSchema || "Database default"
+                  : (persistence.runtime.postgresql.serviceRef?.databaseSchema || "Database default") + " (shared runtime datasource)"}</p>
+              </> : <p>Configure runtime persistence in the platform wizard.</p>}
+            </> : <p>Unable to verify the linked platform or read its datastore configuration.</p>}
           </Alert>
         )}
       </Form>

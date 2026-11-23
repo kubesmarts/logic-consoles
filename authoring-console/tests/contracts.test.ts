@@ -27,8 +27,17 @@ describe("workflow identity vs CR name", () => {
     // workflow name is "payments" but the CR is hand-authored as legacy-payment-flow.
     expect(version?.version.workflowName).toBe("payments");
     expect(version?.crName).toBe("legacy-payment-flow");
-    expect(version?.resource.name).toBe("legacy-payment-flow");
+    expect(version?.resource?.name).toBe("legacy-payment-flow");
     expect(version?.crName).not.toBe(version?.version.workflowName);
+  });
+
+  it("leaves CR identity unresolved for missing or ambiguous matches", () => {
+    const one = definitionFixtures[0]!;
+    for (const items of [[], [one, { ...one, metadata: { ...one.metadata, name: "copy" } }]]) {
+      const rows = buildFamilies(catalogFixture, items, "default").flatMap((family) => family.versions);
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.every((row) => row.crName === null && row.resource === null)).toBe(true);
+    }
   });
 
   it("uses the console-generated CR name for hello-world versions", () => {

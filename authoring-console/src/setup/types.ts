@@ -49,9 +49,32 @@ export interface GatewayIngressConfig {
  * Platform setup draft maintained across wizard steps.
  */
 export interface PlatformSetupDraft {
+  readonly runtimePersistence?: RuntimePersistence | null;
   readonly targetNamespace: string;
   readonly executionMode: ExecutionMode;
   readonly dataIndex?: DataIndexConfig;
   readonly vector?: VectorConfig;
   readonly gatewayIngress: GatewayIngressConfig;
+}
+
+export interface RuntimeDatastore {
+  postgresql?: {
+    secretRef: { name: string };
+    serviceRef: { name: string; namespace?: string; databaseName?: string; databaseSchema?: string };
+  };
+  migrationSecretRef?: { name: string };
+}
+
+export interface RuntimePersistence {
+  runtime?: RuntimeDatastore;
+  quartz?: RuntimeDatastore;
+}
+
+/** Resolve the Vector settings displayed by the history-enabled platform wizard. */
+export function platformVectorConfig(draft: PlatformSetupDraft): VectorConfig {
+  const watchNamespaces = draft.vector?.watchNamespaces;
+  return {
+    watchNamespaces: watchNamespaces?.[0]?.trim() ? watchNamespaces : [draft.targetNamespace],
+    debugEvents: draft.vector?.debugEvents ?? false,
+  };
 }

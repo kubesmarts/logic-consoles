@@ -5,7 +5,8 @@
  * Maps @kubernetes/client-node responses to the contracts/kubernetes.ts types.
  */
 import type { K8sClientContext } from "../kubernetes-client.js";
-import { getK8sErrorStatus, getK8sErrorBody, isK8sError } from "../kubernetes-client.js";
+import { RequestError, writeRejection } from "./errors.js";
+import type { V1Namespace, V1Pod, V1SelfSubjectAccessReview } from "@kubernetes/client-node";
 
 /** Request payload shapes matching src/contracts/kubernetes.ts */
 export interface GetRequest {
@@ -41,213 +42,82 @@ export interface WriteRequest {
   readonly dryRun?: boolean;
 }
 
-/**
- * Map GVK to the plural resource name.
- * Simplified mapping; complete implementation would use API discovery.
- */
-const getPluralResource = (kind: string): string => {
-  const mappings: Record<string, string> = {
-    Namespace: "namespaces",
-    ClusterLogicPlatform: "clusterlogicplatforms",
-    LogicFlowRuntime: "logicflowruntimes",
-    LogicFlowDefinition: "logicflowdefinitions",
-    LogicFlowService: "logicflowservices",
+const resources: Record<string, string> = {
+  ClusterLogicPlatform: "clusterlogicplatforms",
+  LogicFlowRuntime: "logicflowruntimes",
+  LogicFlowDefinition: "logicflowdefinitions",
+  LogicFlowService: "logicflowservices",
+};
+
+function logicPlural(gvk: GetRequest["gvk"]) {
+  if (gvk.group !== "logic.kubesmarts.org" || gvk.version !== "v1" || !Object.hasOwn(resources, gvk.kind)) {
+    throw new RequestError(400, "Unsupported Kubernetes resource");
+  }
+  return resources[gvk.kind];
+}
+
+function podImages(pod: V1Pod) {
+  const { name, namespace, labels } = pod.metadata ?? {};
+  return {
+    apiVersion: "v1", kind: "Pod", metadata: { name, namespace, labels },
+    spec: { containers: pod.spec?.containers.map(({ name, image }) => ({ name, image })) ?? [] },
+    status: { phase: pod.status?.phase, containerStatuses: pod.status?.containerStatuses?.map(({ name, image, imageID }) => ({ name, image, imageID })) ?? [] },
   };
-  return mappings[kind] ?? `${kind.toLowerCase()}s`;
-};
+}
 
-/** Map K8s client error to WriteError shape. */
-const mapToWriteError = (error: unknown): unknown => {
-  if (!isK8sError(error)) {
-    return {
-      kind: "unreachable",
-      detail: error instanceof Error ? error.message : String(error),
-    };
+export async function handleGet(client: K8sClientContext, { gvk, name, namespace }: GetRequest) {
+  if (gvk.group === "" && gvk.version === "v1") {
+    if (gvk.kind === "Namespace") return client.coreApi.readNamespace({ name });
+    if (gvk.kind === "Pod" && namespace) return podImages(await client.coreApi.readNamespacedPod({ name, namespace }));
   }
+  const args = { group: gvk.group, version: gvk.version, plural: logicPlural(gvk), name };
+  return namespace ? client.customApi.getNamespacedCustomObject({ ...args, namespace }) : client.customApi.getClusterCustomObject(args);
+}
 
-  const status = getK8sErrorStatus(error);
-  const body = getK8sErrorBody(error);
-
-  if (status === 403) {
-    return { kind: "forbidden", reason: JSON.stringify(body) };
-  }
-
-  if (status === 409) {
-    return { kind: "conflict" };
-  }
-
-  if (status === 422 || status === 400) {
-    // Admission/validation error - try to extract field errors
-    const errors: Array<{ path: string; message: string }> = [];
-
-    if (typeof body === "object" && body !== null && "message" in body) {
-      errors.push({ path: "", message: String(body.message) });
-    }
-
-    return { kind: "admission", errors };
-  }
-
-  if (status && status >= 500) {
-    return { kind: "server-error", status, detail: JSON.stringify(body) };
-  }
-
-  return { kind: "server-error", status, detail: JSON.stringify(body) };
-};
-
-/** Handle GET request. */
-export const handleGet = async (
-  client: K8sClientContext,
-  req: GetRequest
-): Promise<unknown> => {
-  const { gvk, name, namespace } = req;
-  const plural = getPluralResource(gvk.kind);
-
-  if (gvk.group === "") {
-    // Core API - special handling for namespaces
-    if (gvk.kind === "Namespace") {
-      const result = await client.coreApi.readNamespace({ name });
-      return result;
-    }
-    throw new Error(`Unsupported core kind for GET: ${gvk.kind}`);
-  } else {
-    // Custom API
-    const result = namespace
-      ? await client.customApi.getNamespacedCustomObject({
-          group: gvk.group,
-          version: gvk.version,
-          namespace,
-          plural,
-          name,
-        })
-      : await client.customApi.getClusterCustomObject({
-          group: gvk.group,
-          version: gvk.version,
-          plural,
-          name,
-        });
-    return result;
-  }
-};
-
-/** Handle LIST request. */
-export const handleList = async (
-  client: K8sClientContext,
-  req: ListRequest
-): Promise<unknown> => {
+export async function handleList(client: K8sClientContext, req: ListRequest) {
   const { gvk, namespace, labelSelector, fieldSelector, limit } = req;
-  const plural = getPluralResource(gvk.kind);
-
-  if (gvk.group === "") {
-    // Core API
-    if (gvk.kind === "Namespace") {
-      const result = await client.coreApi.listNamespace({
-        fieldSelector,
-        labelSelector,
-        limit,
-      });
-      return result;
+  const options = { labelSelector, fieldSelector, limit, _continue: req.continue };
+  if (gvk.group === "" && gvk.version === "v1") {
+    if (gvk.kind === "Namespace") return client.coreApi.listNamespace(options);
+    if (gvk.kind === "Pod") {
+      const list = namespace
+        ? await client.coreApi.listNamespacedPod({ ...options, namespace })
+        : await client.coreApi.listPodForAllNamespaces(options);
+      return { ...list, items: list.items.map(podImages) };
     }
-    throw new Error(`Unsupported core kind for LIST: ${gvk.kind}`);
-  } else {
-    // Custom API
-    const result = namespace
-      ? await client.customApi.listNamespacedCustomObject({
-          group: gvk.group,
-          version: gvk.version,
-          namespace,
-          plural,
-          fieldSelector,
-          labelSelector,
-          limit,
-        })
-      : await client.customApi.listClusterCustomObject({
-          group: gvk.group,
-          version: gvk.version,
-          plural,
-          fieldSelector,
-          labelSelector,
-          limit,
-        });
-    return result;
   }
-};
+  const args = { ...options, group: gvk.group, version: gvk.version, plural: logicPlural(gvk) };
+  return namespace ? client.customApi.listNamespacedCustomObject({ ...args, namespace }) : client.customApi.listClusterCustomObject(args);
+}
 
-/** Handle CREATE or UPDATE request. */
-export const handleWrite = async (
-  client: K8sClientContext,
-  req: WriteRequest
-): Promise<unknown> => {
-  const { object, verb, dryRun } = req;
-  const { kind, metadata } = object;
-  const namespace = metadata.namespace;
-
-  const parts = object.apiVersion.split("/");
-  const group = parts.length === 2 ? parts[0] ?? "" : "";
-  const version = parts.length === 2 ? parts[1] ?? "" : parts[0] ?? "";
-
-  const plural = getPluralResource(kind);
-  const dryRunParam = dryRun ? "All" : undefined;
-
+export async function handleWrite(client: K8sClientContext, req: WriteRequest) {
   try {
-    if (verb === "create") {
-      if (group === "") {
-        // Core API
-        if (kind === "Namespace") {
-          const result = await client.coreApi.createNamespace({
-            body: object as never,
-            dryRun: dryRunParam,
-          });
-          return result;
-        }
-        throw new Error(`Unsupported core kind for CREATE: ${kind}`);
-      } else {
-        // Custom API
-        const result = namespace
-          ? await client.customApi.createNamespacedCustomObject({
-              group,
-              version,
-              namespace,
-              plural,
-              body: object,
-              dryRun: dryRunParam,
-            })
-          : await client.customApi.createClusterCustomObject({
-              group,
-              version,
-              plural,
-              body: object,
-              dryRun: dryRunParam,
-            });
-        return result;
-      }
-    } else {
-      // UPDATE - use replace (PUT)
-      if (group === "") {
-        throw new Error(`Unsupported core kind for UPDATE: ${kind}`);
-      } else {
-        const result = namespace
-          ? await client.customApi.replaceNamespacedCustomObject({
-              group,
-              version,
-              namespace,
-              plural,
-              name: metadata.name,
-              body: object,
-              dryRun: dryRunParam,
-            })
-          : await client.customApi.replaceClusterCustomObject({
-              group,
-              version,
-              plural,
-              name: metadata.name,
-              body: object,
-              dryRun: dryRunParam,
-            });
-        return result;
-      }
+    const { object: body, verb } = req;
+    const dryRun = req.dryRun ? "All" : undefined;
+    if (!body || (verb !== "create" && verb !== "update")) throw new RequestError(400, "Expected a create or update candidate");
+    if (verb === "create" && body.apiVersion === "authorization.k8s.io/v1" && body.kind === "SelfSubjectAccessReview") {
+      return await client.authApi.createSelfSubjectAccessReview({ body: body as V1SelfSubjectAccessReview });
     }
+    if (!body.metadata?.name) throw new RequestError(400, "Missing metadata.name");
+    if (verb === "create" && body.kind === "Namespace" && body.apiVersion === "v1") {
+      return await client.coreApi.createNamespace({ body: body as V1Namespace, dryRun });
+    }
+    const [group, version] = body.apiVersion.split("/");
+    const plural = logicPlural({ group, version, kind: body.kind });
+    if (body.kind === "LogicFlowService") throw new RequestError(400, "LogicFlowService is read-only");
+    const { namespace, name } = body.metadata;
+    if ((body.kind === "ClusterLogicPlatform") !== !namespace) throw new RequestError(400, "Incorrect resource scope");
+    const args = { group, version, plural, dryRun, body };
+    if (verb === "create") {
+      return namespace ? await client.customApi.createNamespacedCustomObject({ ...args, namespace }) : await client.customApi.createClusterCustomObject(args);
+    }
+    if (!req.expectedResourceVersion || (body.metadata.resourceVersion && req.expectedResourceVersion !== body.metadata.resourceVersion)) {
+      throw new RequestError(409, "The candidate must carry its loaded resource version");
+    }
+    // Editors retain the loaded token outside editable YAML.
+    const replacement = { ...args, name, body: { ...body, metadata: { ...body.metadata, resourceVersion: req.expectedResourceVersion } } };
+    return namespace ? await client.customApi.replaceNamespacedCustomObject({ ...replacement, namespace }) : await client.customApi.replaceClusterCustomObject(replacement);
   } catch (error) {
-    // Map to WriteError for creates/updates
-    throw { writeError: mapToWriteError(error) };
+    throw writeRejection(error);
   }
-};
+}

@@ -11,29 +11,29 @@ import { fetchGateway, validateGatewayHref } from "../gateway-client.js";
 const mapToGatewayError = (error: unknown): unknown => {
   if (typeof error === "object" && error !== null && "status" in error) {
     const gatewayError = error as GatewayErrorResponse;
-    const { status, body } = gatewayError;
+    const { status } = gatewayError;
 
     if (status === 0) {
-      return { kind: "unreachable", detail: String(body) };
+      return { kind: "unreachable", status: 503, detail: "Gateway connection failed" };
     }
 
     if (status === 503) {
-      return { kind: "index-pending" };
+      return { kind: "index-pending", status };
     }
 
     if (status === 502) {
-      return { kind: "upstream-error", detail: JSON.stringify(body) };
+      return { kind: "upstream-error", status, detail: `Gateway returned HTTP ${status}` };
     }
 
     if (status === 403) {
-      return { kind: "denied", reason: JSON.stringify(body) };
+      return { kind: "denied", status, reason: "Gateway denied access" };
     }
 
     // Other errors map to upstream-error
-    return { kind: "upstream-error", detail: JSON.stringify(body) };
+    return { kind: "upstream-error", status, detail: `Gateway returned HTTP ${status}` };
   }
 
-  return { kind: "unreachable", detail: error instanceof Error ? error.message : String(error) };
+  return { kind: "unreachable", status: 400, detail: "Invalid gateway request" };
 };
 
 /** Handle GET /v1/topology?namespace={ns} */
@@ -126,6 +126,23 @@ export const handleGetInstance = async (
   }
 };
 
+/** Validate the exact versioned route before submitting a mutation. */
+function runtimePath(config: GatewayClientConfig, href: string, operation: "async" | "sync" | "instance") {
+  const path = validateGatewayHref(href, config);
+  const parts = path.split("/");
+  if (href !== path || /[?#]/.test(path) || parts[1] !== "v1" || parts[2] !== "runtime") {
+    throw new Error("Invalid runtime link");
+  }
+  // Go's router reserves the versionless /sync endpoint.
+  if (parts.length < 6 || parts.slice(3, 6).some(value => !value || /[/\\?#{}]/.test(decodeURIComponent(value))) || parts[5] === "sync") {
+    throw new Error("Missing runtime identity");
+  }
+  if (operation === "async" && parts.length === 6) return path;
+  if (operation === "sync" && parts.length === 7 && parts[6] === "sync") return path;
+  if (operation === "instance" && parts.length === 9 && parts[6] === "instance" && parts[7] && ["suspend", "resume", "cancel"].includes(parts[8])) return path;
+  throw new Error("Unexpected runtime operation");
+}
+
 /**
  * Handle POST to execute link (async).
  * SECURITY: href is UNTRUSTED browser input - validate before use.
@@ -138,14 +155,18 @@ export const handleExecute = async (
 ): Promise<unknown> => {
   try {
     // Validate and constrain href to gateway origin (SSRF prevention)
-    const validatedPath = validateGatewayHref(href, config);
+    const validatedPath = runtimePath(config, href, "async");
 
     const response = await fetchGateway(config, validatedPath, {
       method: "POST",
       body: input,
       signal,
     });
-    return response.data;
+    const raw = response.data as { instanceId?: string; workflowApplicationId?: string } | null;
+    if (response.status !== 202 || typeof raw?.instanceId !== "string" || !raw.instanceId) {
+      throw { status: 502 };
+    }
+    return { instanceId: raw.instanceId, workflowApplicationId: raw.workflowApplicationId, raw };
   } catch (error) {
     throw mapToGatewayError(error);
   }
@@ -163,14 +184,17 @@ export const handleExecuteSync = async (
 ): Promise<unknown> => {
   try {
     // Validate and constrain href to gateway origin (SSRF prevention)
-    const validatedPath = validateGatewayHref(href, config);
+    const validatedPath = runtimePath(config, href, "sync");
 
     const response = await fetchGateway(config, validatedPath, {
       method: "POST",
       body: input,
       signal,
     });
-    return response.data;
+    if (response.status !== 200) throw { status: 502 };
+    const raw = response.data;
+    const output = raw && typeof raw === "object" && "workflowdata" in raw ? raw.workflowdata : raw;
+    return { output, raw };
   } catch (error) {
     throw mapToGatewayError(error);
   }
@@ -195,10 +219,13 @@ export const handleInstanceAction = async (
 ): Promise<unknown> => {
   try {
     // Substitute {id} FIRST - encodeURIComponent prevents instanceId from injecting /, //, :, etc.
+    if (!linkHref.endsWith("/instance/{id}/suspend") && !linkHref.endsWith("/instance/{id}/resume") && !linkHref.endsWith("/instance/{id}/cancel")) {
+      throw new Error("Expected a templated instance action");
+    }
     const concreteHref = linkHref.replace("{id}", encodeURIComponent(instanceId));
 
     // THEN validate the concrete path (SSRF prevention on the final path)
-    const validatedPath = validateGatewayHref(concreteHref, config);
+    const validatedPath = runtimePath(config, concreteHref, "instance");
 
     const response = await fetchGateway(config, validatedPath, {
       method: "POST",
@@ -211,6 +238,10 @@ export const handleInstanceAction = async (
       raw: response.data,
     };
   } catch (error) {
+    if (typeof error === "object" && error !== null && "status" in error && "body" in error) {
+      const { status, body } = error as GatewayErrorResponse;
+      if (status >= 400) return { instanceId, httpStatus: status, raw: body };
+    }
     throw mapToGatewayError(error);
   }
 };

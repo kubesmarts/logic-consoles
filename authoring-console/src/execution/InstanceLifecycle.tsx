@@ -20,6 +20,7 @@ import {
   ModalVariant,
 } from "@patternfly/react-core";
 import type { DefinitionResource, GatewayTransport } from "../contracts/index.ts";
+import { operationLink, unknownOutcome } from "./operation-link.ts";
 import type { InstanceAction, LifecycleState } from "./types.ts";
 
 export interface InstanceLifecycleProps {
@@ -59,12 +60,7 @@ export const InstanceLifecycle = ({
     setState((s) => ({ ...s, isActing: true, actingOn: action, result: null, error: null }));
 
     try {
-      const link =
-        action === "suspend"
-          ? definition._links.suspend
-          : action === "resume"
-            ? definition._links.resume
-            : definition._links.cancel;
+      const link = operationLink(definition, action);
 
       if (!link) {
         setState((s) => ({
@@ -76,14 +72,14 @@ export const InstanceLifecycle = ({
       }
 
       // Execute the lifecycle action with an AbortController
-      const controller = new AbortController();
+      const signal = AbortSignal.timeout(120_000);
       let result;
       if (action === "suspend") {
-        result = await gateway.suspendInstance(link, instanceId, controller.signal);
+        result = await gateway.suspendInstance(link, instanceId, signal);
       } else if (action === "resume") {
-        result = await gateway.resumeInstance(link, instanceId, controller.signal);
+        result = await gateway.resumeInstance(link, instanceId, signal);
       } else {
-        result = await gateway.cancelInstance(link, instanceId, controller.signal);
+        result = await gateway.cancelInstance(link, instanceId, signal);
       }
 
       setState((s) => ({
@@ -98,7 +94,7 @@ export const InstanceLifecycle = ({
         onActionComplete();
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : `${action} failed`;
+      const message = unknownOutcome(err) ? "The outcome is unknown. Refresh instance details before acting again." : err instanceof Error ? err.message : `${action} failed`;
       setState((s) => ({ ...s, isActing: false, actingOn: null, error: message }));
     }
   };
@@ -113,9 +109,9 @@ export const InstanceLifecycle = ({
   };
 
   // Determine available actions based on instance state (simplified - in a real app you'd check instance status)
-  const suspendAvailable = !!definition._links.suspend;
-  const resumeAvailable = !!definition._links.resume;
-  const cancelAvailable = !!definition._links.cancel;
+  const suspendAvailable = !!operationLink(definition, "suspend");
+  const resumeAvailable = !!operationLink(definition, "resume");
+  const cancelAvailable = !!operationLink(definition, "cancel");
 
   return (
     <>

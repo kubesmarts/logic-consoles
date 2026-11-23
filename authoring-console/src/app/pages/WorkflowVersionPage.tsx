@@ -32,13 +32,11 @@ import {
   Tabs,
   Title,
 } from "@patternfly/react-core";
-import { useQuery } from "@tanstack/react-query";
 import { stringify as stringifyYaml } from "yaml";
 import { DiagramPreview } from "../../editors/DiagramPreview.tsx";
 import { YamlEditor } from "../../editors/YamlEditor.tsx";
-import { InstanceHistoryView } from "../../shared/operations/index.ts";
-import { RunPanel } from "../../execution/index.ts";
-import { useConsole, useNavigation } from "../ConsoleContext.tsx";
+import { VersionHistory, VersionRunPanel } from "../../execution/VersionExecution.tsx";
+import { useNavigation } from "../ConsoleContext.tsx";
 import { useWorkflowCr, useWorkflowFamilies, useWorkflowFlow } from "../queries.ts";
 import type { WorkflowVersionKey } from "../../contracts/index.ts";
 
@@ -53,9 +51,9 @@ export const WorkflowVersionPage = (): ReactNode => {
   const [actionsOpen, setActionsOpen] = useState(false);
   const [runPanelOpen, setRunPanelOpen] = useState(false);
 
-  const handleUpdateVersion = (): void => {
+  const openPublish = (mode: "create" | "update"): void => {
     const params = new URLSearchParams({
-      mode: "update",
+      mode,
       namespace,
       workflowName,
       version,
@@ -68,7 +66,7 @@ export const WorkflowVersionPage = (): ReactNode => {
     setActionsOpen(false);
   };
 
-  const families = useWorkflowFamilies();
+  const families = useWorkflowFamilies(namespace);
   const row = useMemo(
     () =>
       families.data
@@ -86,6 +84,14 @@ export const WorkflowVersionPage = (): ReactNode => {
       </PageSection>
     );
   }
+
+  if (families.isError) return (
+    <PageSection>
+      <EmptyState titleText="Gateway catalog unavailable" headingLevel="h2" status="warning">
+        <Button variant="secondary" onClick={() => void families.refetch()}>Retry</Button>
+      </EmptyState>
+    </PageSection>
+  );
 
   if (!row) {
     return (
@@ -131,7 +137,10 @@ export const WorkflowVersionPage = (): ReactNode => {
               )}
             >
               <DropdownList>
-                <DropdownItem key="update" onClick={handleUpdateVersion}>
+                <DropdownItem key="create" onClick={() => openPublish("create")}>
+                  Publish new version
+                </DropdownItem>
+                <DropdownItem key="update" onClick={() => openPublish("update")}>
                   Update this version
                 </DropdownItem>
               </DropdownList>
@@ -161,7 +170,7 @@ export const WorkflowVersionPage = (): ReactNode => {
               </DescriptionListGroup>
               <DescriptionListGroup>
                 <DescriptionListTerm>Definition (CR name)</DescriptionListTerm>
-                <DescriptionListDescription data-testid="cr-name">{row.crName}</DescriptionListDescription>
+                <DescriptionListDescription data-testid="cr-name">{row.crName ?? "Unresolved"}</DescriptionListDescription>
               </DescriptionListGroup>
             </DescriptionList>
           </Tab>
@@ -169,47 +178,16 @@ export const WorkflowVersionPage = (): ReactNode => {
             <DiagramTab versionKey={versionKey} />
           </Tab>
           <Tab eventKey="yaml" title={<TabTitleText>YAML</TabTitleText>}>
-            <YamlTab resourceName={row.crName} namespace={namespace} />
+            {row.crName ? <YamlTab resourceName={row.crName} namespace={namespace} /> : <Content component="p">A unique Kubernetes CR could not be resolved for this version.</Content>}
           </Tab>
           <Tab eventKey="history" title={<TabTitleText>Instance history</TabTitleText>}>
-            <InstanceHistoryTab versionKey={versionKey} />
+            <VersionHistory versionKey={versionKey} />
           </Tab>
         </Tabs>
       </PageSection>
-      <RunPanelWrapper versionKey={versionKey} isOpen={runPanelOpen} onClose={() => setRunPanelOpen(false)} />
+      {runPanelOpen && <VersionRunPanel versionKey={versionKey} onClose={() => setRunPanelOpen(false)} />}
     </>
   );
-};
-
-const RunPanelWrapper = ({
-  versionKey,
-  isOpen,
-  onClose,
-}: {
-  readonly versionKey: WorkflowVersionKey;
-  readonly isOpen: boolean;
-  readonly onClose: () => void;
-}): ReactNode => {
-  const { gateway } = useConsole();
-  const flow = useWorkflowFlow(versionKey);
-
-  // Get the definition resource from the catalog
-  const catalogQuery = useQuery({
-    queryKey: ["catalog"],
-    queryFn: ({ signal }) => gateway.listDefinitions(signal),
-  });
-
-  const definition = catalogQuery.data?.find(
-    (d) =>
-      d.namespace === versionKey.namespace &&
-      d.name === versionKey.workflowName &&
-      d.version === versionKey.version,
-  );
-
-  if (!isOpen) return null;
-  if (!definition || !flow.data) return null;
-
-  return <RunPanel definition={definition} flow={flow.data} gateway={gateway} isOpen={isOpen} onClose={onClose} />;
 };
 
 const DiagramTab = ({ versionKey }: { readonly versionKey: WorkflowVersionKey }): ReactNode => {
@@ -234,9 +212,4 @@ const YamlTab = ({
   if (cr.isPending) return <Spinner aria-label="Loading YAML" />;
   if (cr.isError || !cr.data) return <Content component="p">CR unavailable.</Content>;
   return <YamlEditor value={stringifyYaml(cr.data)} ariaLabel="Full definition CR YAML" readOnly />;
-};
-
-const InstanceHistoryTab = ({ versionKey }: { readonly versionKey: WorkflowVersionKey }): ReactNode => {
-  const { gateway } = useConsole();
-  return <InstanceHistoryView versionKey={versionKey} gateway={gateway} />;
 };

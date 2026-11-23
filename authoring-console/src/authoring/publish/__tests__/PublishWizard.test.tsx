@@ -270,12 +270,7 @@ describe("PublishWizard Integration", () => {
     await user.click(updateRadio);
     expect(updateRadio).toBeChecked();
 
-    // Select runtime
-    const runtimeSelect = await screen.findByRole("button", { name: /Select a runtime|test-runtime/ });
-    await user.click(runtimeSelect);
-    // Find the option by text (may already be selected if family exists)
-    const runtimeOption = await screen.findByText(/test-runtime.*Ephemeral/);
-    await user.click(runtimeOption);
+    expect(await screen.findByRole("button", {name:"test-runtime"})).toBeDisabled();
 
     // Review (should resolve and potentially show diff)
     const reviewButton = screen.getByRole("button", { name: /Review update/ });
@@ -337,10 +332,7 @@ describe("PublishWizard Integration", () => {
     const updateRadio = screen.getByLabelText(/Update existing version/);
     await user.click(updateRadio);
 
-    // Select runtime
-    const runtimeSelect = await screen.findByRole("button", { name: /Select a runtime|test-runtime/ });
-    await user.click(runtimeSelect);
-    await user.click(await screen.findByText("test-runtime (Ephemeral)"));
+    expect(await screen.findByRole("button", {name:"test-runtime"})).toBeDisabled();
 
     // Try to review (should block with ambiguity error)
     const reviewButton = screen.getByRole("button", { name: /Review update/ });
@@ -388,6 +380,20 @@ describe("PublishWizard Integration", () => {
     // Navigate button should be present and enabled
     const viewButton = screen.getByRole("button", { name: /View workflow version/ });
     expect(viewButton).toBeEnabled();
+  });
+
+  it("starts a new version from the selected deployed workflow when the gateway is unavailable", async () => {
+    definitionsList.push({
+      apiVersion:"logic.kubesmarts.org/v1", kind:"LogicFlowDefinition",
+      metadata:{name:"checkout-legacy",namespace:"prod",labels:{
+        [OperatorLabels.workflowName]:"checkout",[OperatorLabels.workflowVersion]:"2.3.4",
+      }},
+      spec:{runtimeRef:{name:"test-runtime"},flow:{document:{name:"checkout",version:"2.3.4",namespace:"prod"}}},
+    });
+    renderWizard("/publish?mode=create&namespace=prod&workflowName=checkout&version=2.3.4");
+    expect(await screen.findByText("Workflow: checkout @ 2.3.4")).toBeVisible();
+    expect(await screen.findByDisplayValue("2.3.5")).toBeVisible();
+    expect(screen.getByLabelText(/Publish new version/)).toBeChecked();
   });
 
   it("(e) update-entry pre-fill from query params", async () => {

@@ -84,7 +84,7 @@ export const AppShell = ({ children }: { readonly children: ReactNode }): ReactN
                 />
               </ToolbarItem>
               <ToolbarItem>
-                <Button variant="secondary" aria-label="Active cluster context">
+                <Button variant="secondary" aria-label="Active cluster context" onClick={() => navigate("/connection")}>
                   {contextLabel}
                 </Button>
               </ToolbarItem>

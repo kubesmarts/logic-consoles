@@ -449,6 +449,42 @@ describe("RunPanel", () => {
       expect(executeSync).toHaveBeenCalledTimes(1);
     });
 
+    it("offers a deliberate second start only after an unknown outcome with history disabled", async () => {
+      const user = userEvent.setup();
+      const executeSync = vi.fn().mockRejectedValue(new DOMException("Timed out", "TimeoutError"));
+      const gateway = createMockGateway({ executeSync });
+      const flow = { document: { name: "test-workflow", version: "1.0.0" } };
+      const renderHistory = vi.fn();
+      render(<RunPanel definition={createDefinition()} flow={flow} gateway={gateway} isOpen onClose={vi.fn()}
+        historyEnabled={false} renderHistory={renderHistory} />);
+      const json = screen.getByLabelText("JSON input");
+      await user.clear(json);
+      await user.paste('{"keep":true}');
+      await user.click(screen.getByRole("button", { name: "Run and wait" }));
+      expect(await screen.findByRole("button", { name: "Start another run" })).toBeVisible();
+      expect(json).toHaveValue('{"keep":true}');
+      expect(executeSync).toHaveBeenCalledTimes(1);
+      expect(renderHistory).not.toHaveBeenCalled();
+    });
+
+    it("rejects invalid raw input for the selected schema and runner", async () => {
+      const user = userEvent.setup();
+      const gateway = createMockGateway();
+      const flow = { document: { name: "test-workflow", version: "1.0.0" },
+        input: { schema: { document: { type: "object", properties: { n: { type: "integer" } }, required: ["n"] } } } };
+      render(<RunPanel definition={createDefinition()} flow={flow} gateway={gateway} isOpen onClose={vi.fn()} />);
+      await user.click(screen.getByLabelText("Raw JSON"));
+      for (const input of ['{"n":"x"}', "[]"]) {
+        const editor = screen.getByLabelText("JSON input");
+        await user.clear(editor);
+        await user.paste(input);
+        await user.click(screen.getByRole("button", { name: "Run and wait" }));
+        expect(await screen.findByText("Execution error")).toBeVisible();
+        expect(editor).toHaveValue(input);
+      }
+      expect(gateway.executeSync).not.toHaveBeenCalled();
+    });
+
     it("displays error when execution link is missing", async () => {
       const user = userEvent.setup();
       const flow: WorkflowDocument = {

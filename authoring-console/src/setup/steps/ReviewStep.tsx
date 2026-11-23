@@ -32,23 +32,14 @@ export const ReviewStep = ({ draft, onComplete, onCancel, editMode = false, exis
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Build the CR from draft
-  const platformCR = buildPlatformCR(draft);
-
-  // In edit mode, merge with existing platform to preserve resourceVersion and other fields
-  const seed = editMode && existingPlatform
-    ? {
-        ...existingPlatform,
-        spec: platformCR.spec,
-      }
-    : platformCR;
+  const seed = buildPlatformCR(draft, editMode ? existingPlatform : undefined);
 
   // Use ResourceEditor hook for reconciliation tracking
   const editorController = useResourceEditor<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus>({
     transport: kubernetes,
     ref: {
       gvk: { group: LOGIC_GROUP, version: LOGIC_VERSION, kind: LogicKinds.ClusterLogicPlatform },
-      name: "cluster-platform",
-      namespace: "",
+      name: seed.metadata.name,
     },
     seed,
     verb: editMode ? "update" : "create",
@@ -124,7 +115,11 @@ export const ReviewStep = ({ draft, onComplete, onCancel, editMode = false, exis
       <PageSection>
         <Title headingLevel="h1">{stateMessages[postSubmitState]}</Title>
         <div style={{ marginTop: "1rem", marginBottom: "2rem" }}>
-          {postSubmitState === "submitted" || postSubmitState === "reconciling" ? (
+          {reconciliation?.error && submittedObject ? (
+            <Alert variant="warning" title={reconciliation.error} isInline>
+              <Button variant="link" onClick={() => editorController.startReconciliation(submittedObject)}>Retry status</Button>
+            </Alert>
+          ) : postSubmitState === "submitted" || postSubmitState === "reconciling" ? (
             <Alert variant="info" title={stateDescriptions[postSubmitState]} isInline>
               <Spinner size="md" style={{ marginRight: "0.5rem" }} />
               Checking operator status...
@@ -178,8 +173,7 @@ export const ReviewStep = ({ draft, onComplete, onCancel, editMode = false, exis
           transport={kubernetes}
           ref={{
             gvk: { group: LOGIC_GROUP, version: LOGIC_VERSION, kind: LogicKinds.ClusterLogicPlatform },
-            name: "cluster-platform",
-            namespace: "",
+            name: seed.metadata.name,
           }}
           seed={seed}
           verb={editMode ? "update" : "create"}
@@ -274,6 +268,19 @@ function ComponentReadinessTable({
     };
   };
 
+  const persistence = draft.runtimePersistence;
+  const runtime = persistence?.runtime?.postgresql;
+  const quartz = persistence?.quartz?.postgresql;
+  const complete = (store: typeof runtime) => Boolean(store?.secretRef?.name && store.serviceRef?.name);
+  const runtimeRow: Component = {
+    name: "Runtime persistence",
+    enabled: !!persistence,
+    status: !persistence ? "skipped" : complete(runtime) && (!quartz || complete(quartz)) ? "configured" : "pending",
+    description: persistence
+      ? `Runtime schema: ${runtime?.serviceRef?.databaseSchema || "Database default"}. Quartz: ${quartz ? quartz.serviceRef?.databaseSchema || "Database default" : "shares the runtime datasource"}.`
+      : "Runtime persistence disabled",
+  };
+
   const components: Component[] = [
     {
       name: "Target Namespace",
@@ -281,6 +288,7 @@ function ComponentReadinessTable({
       status: hasStatus ? "ready" : (draft.targetNamespace ? "configured" : "pending"),
       description: draft.targetNamespace || "Waiting for namespace selection",
     },
+    ...(!hasStatus ? [runtimeRow] : []),
     ...(draft.gatewayIngress.enabled || (hasStatus && status.gateway)
       ? [
           {

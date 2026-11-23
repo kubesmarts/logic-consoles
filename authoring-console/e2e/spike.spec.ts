@@ -1,3 +1,4 @@
+import { openLauncher } from "./connection";
 import { expect, test } from "@playwright/test";
 
 /**
@@ -6,7 +7,7 @@ import { expect, test } from "@playwright/test";
  * render together, in BOTH light and dark themes, with working keyboard focus.
  */
 test("the full dependency stack renders together in light and dark", async ({ page }) => {
-  await page.goto("/#/spike");
+  await openLauncher(page, "/spike");
 
   // PatternFly shell frame.
   await expect(page.getByRole("link", { name: "Authoring Console" })).toBeVisible();

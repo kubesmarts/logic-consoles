@@ -140,16 +140,13 @@ export const TargetNamespaceStep = ({
           )}
           {!editMode && canCreateNamespace && (
             <div style={{ marginBottom: "1rem" }}>
-              <Tabs activeKey={0}>
+              <Tabs defaultActiveKey={0}>
                 <Tab eventKey={0} title={<TabTitleText>Select existing</TabTitleText>}>
                   <div style={{ padding: "1rem 0" }}>
-                    {namespacesQuery.isPending ? (
-                      "Loading namespaces..."
-                    ) : namespaces.length > 0 ? (
-                      <>
                         <TextInput
                           value={draft.targetNamespace}
                           onChange={(_event, value) => onUpdate({ targetNamespace: value })}
+                          aria-label="Existing namespace"
                           placeholder="Select or type namespace name"
                           id="namespace-input"
                           list="namespace-list"
@@ -159,14 +156,7 @@ export const TargetNamespaceStep = ({
                             <option key={ns} value={ns} />
                           ))}
                         </datalist>
-                      </>
-                    ) : (
-                      <Alert
-                        isInline
-                        variant={AlertVariant.info}
-                        title="No namespaces available"
-                      />
-                    )}
+
                   </div>
                 </Tab>
                 <Tab eventKey={1} title={<TabTitleText>Create new</TabTitleText>}>

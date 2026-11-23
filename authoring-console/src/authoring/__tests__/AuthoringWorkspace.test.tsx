@@ -300,3 +300,12 @@ describe("shouldBlockNavigation", () => {
     expect(shouldBlockNavigation(true, "/authoring/123", "/authoring/123")).toBe(false);
   });
 });
+
+it("offers to reopen a previously saved draft on this device", async () => {
+  const storage = createMockStorage();
+  storage.saveDraft({id:"resume-example",title:"Saved example",workflowYaml:"document:\n  name: handoff\n  version: 3.0.0",target:{contextName:launcherSession.context.contextName,namespace:"default"},createdAt:"",updatedAt:""});
+  renderWorkspace(storage);
+  await userEvent.click(await screen.findByRole("button", {name:"Open saved draft"}));
+  await userEvent.click(await screen.findByText("Saved example"));
+  await waitFor(() => expect((screen.getByTestId("yaml-editor") as HTMLTextAreaElement).value).toContain("handoff"));
+});

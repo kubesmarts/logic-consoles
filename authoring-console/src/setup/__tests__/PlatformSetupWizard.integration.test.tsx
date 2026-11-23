@@ -99,7 +99,7 @@ describe("PlatformSetupWizard Integration Tests", () => {
       };
 
       const kubernetes = createMockKubernetes({
-        get: vi.fn().mockResolvedValue(existingPlatform),
+        list: vi.fn().mockResolvedValue({ items: [existingPlatform] }),
       });
       const services = createMockServices(kubernetes);
 
@@ -126,7 +126,7 @@ describe("PlatformSetupWizard Integration Tests", () => {
       };
 
       const kubernetes = createMockKubernetes({
-        get: vi.fn().mockResolvedValue(existingPlatform),
+        list: vi.fn().mockResolvedValue({ items: [existingPlatform] }),
       });
       const capabilitiesWithDenied = {
         canI: vi.fn().mockResolvedValue({ decision: "denied" }),
@@ -187,7 +187,7 @@ describe("PlatformSetupWizard Integration Tests", () => {
 
       const updateSpy = vi.fn().mockResolvedValue(existingPlatform);
       const kubernetes = createMockKubernetes({
-        get: vi.fn().mockResolvedValue(existingPlatform),
+        list: vi.fn().mockResolvedValue({ items: [existingPlatform] }),
         update: updateSpy,
         dryRun: vi.fn().mockResolvedValue({ valid: true, object: existingPlatform }),
       });
@@ -308,6 +308,9 @@ describe("PlatformSetupWizard Integration Tests", () => {
                 targetNamespace: "workflows",
                 executionMode: "history-enabled",
                 gatewayIngress: { enabled: true, host: "gateway.example.com" },
+                runtimePersistence: { runtime: { postgresql: {
+                  secretRef: { name: "pg-secret" }, serviceRef: { name: "postgres", databaseSchema: "flow_state" },
+                } } },
                 dataIndex: {
                   postgresqlSecretName: "pg-secret",
                   postgresqlServiceName: "postgres",
@@ -330,6 +333,8 @@ describe("PlatformSetupWizard Integration Tests", () => {
       expect(screen.getByText("workflows")).toBeInTheDocument();
       expect(screen.getByText("Data Index")).toBeInTheDocument();
       expect(screen.getByText(/PostgreSQL: postgres/i)).toBeInTheDocument();
+      expect(screen.getByText("Runtime persistence")).toBeInTheDocument();
+      expect(screen.getByText(/Runtime schema: flow_state. Quartz: shares the runtime datasource/)).toBeInTheDocument();
       expect(screen.getByText("Vector Logging")).toBeInTheDocument();
       expect(screen.getByText("Workflow Gateway")).toBeInTheDocument();
       expect(screen.getByText(/Ingress: gateway.example.com/i)).toBeInTheDocument();

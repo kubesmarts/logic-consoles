@@ -1,14 +1,7 @@
-/**
- * Authoring examples catalog — pinned from open-workflow-specification/specification
- * @ main branch (retrieved 2026-11-20).
- *
- * Each example retains its upstream license (Apache 2.0), source link, and labeled
- * prerequisites. Load with the app (offline) so GitHub availability cannot interrupt
- * authoring. Copying an example produces an independent editable draft.
- *
- * License: Apache 2.0
- * Source: https://github.com/open-workflow-specification/specification/tree/main/examples
- */
+import httpExample from "./examples/call-http-query-parameters.yaml?raw";
+import multipleExample from "./examples/do-multiple.yaml?raw";
+
+export const catalogSource = "https://github.com/open-workflow-specification/specification/blob/09ad1deea8a8bb9d34bfded261b14c054dcf92c7/examples";
 
 export interface WorkflowExample {
   readonly id: string;
@@ -29,12 +22,12 @@ export interface WorkflowExample {
 const helloWorldExample: WorkflowExample = {
   id: "hello-world",
   title: "Hello World",
-  description: "Minimal self-contained workflow that sets a greeting message",
+  description: "Console starter based on the OWS set task. A self-contained workflow that sets a greeting message",
   license: "Apache 2.0",
-  sourceUrl: "https://github.com/open-workflow-specification/specification/blob/main/examples/hello-world.yaml",
+  sourceUrl: `${catalogSource}/set.yaml`,
   prerequisites: [],
   yaml: `document:
-  dsl: '1.0.0'
+  dsl: '1.1.0'
   namespace: default
   name: hello-world
   version: '1.0.0'
@@ -51,12 +44,12 @@ do:
 const greetingWithInputExample: WorkflowExample = {
   id: "greeting-with-input",
   title: "Greeting with Input",
-  description: "Workflow that accepts a name input and returns a personalized greeting",
+  description: "Console starter based on the OWS set task. Accepts a name input and returns a personalized greeting",
   license: "Apache 2.0",
-  sourceUrl: "https://github.com/open-workflow-specification/specification/blob/main/examples/greeting-workflow.yaml",
+  sourceUrl: `${catalogSource}/set.yaml`,
   prerequisites: [],
   yaml: `document:
-  dsl: '1.0.0'
+  dsl: '1.1.0'
   namespace: default
   name: greeting
   version: '1.0.0'
@@ -73,7 +66,7 @@ input:
 do:
   - greet:
       set:
-        message: "\${.name}, welcome!"
+        message: '\${ "Welcome, " + .name }'
 `,
 };
 
@@ -85,21 +78,10 @@ const httpCallExample: WorkflowExample = {
   title: "HTTP API Call",
   description: "Workflow that makes an HTTP GET request to an external API",
   license: "Apache 2.0",
-  sourceUrl: "https://github.com/open-workflow-specification/specification/blob/main/examples/http-call-workflow.yaml",
+  sourceUrl: `${catalogSource}/call-http-query-parameters.yaml`,
   prerequisites: ["Network access", "HTTP endpoint"],
-  yaml: `document:
-  dsl: '1.0.0'
-  namespace: default
-  name: http-example
-  version: '1.0.0'
-do:
-  - fetchData:
-      call: http
-      with:
-        method: get
-        endpoint:
-          uri: https://api.example.com/data
-`,
+  yaml: httpExample,
+
 };
 
 /**
@@ -110,25 +92,10 @@ const sequentialTasksExample: WorkflowExample = {
   title: "Sequential Tasks",
   description: "Workflow with multiple sequential steps demonstrating data flow",
   license: "Apache 2.0",
-  sourceUrl: "https://github.com/open-workflow-specification/specification/blob/main/examples/sequential-workflow.yaml",
-  prerequisites: [],
-  yaml: `document:
-  dsl: '1.0.0'
-  namespace: default
-  name: sequential-example
-  version: '1.0.0'
-do:
-  - initialize:
-      set:
-        counter: 0
-        message: "Starting"
-  - increment:
-      set:
-        counter: "\${.counter + 1}"
-  - finalize:
-      set:
-        message: "Completed \${.counter} steps"
-`,
+  sourceUrl: `${catalogSource}/do-multiple.yaml`,
+  prerequisites: ["Petstore HTTP service and a pet ID"],
+  yaml: multipleExample,
+
 };
 
 /**

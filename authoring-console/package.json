@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Authoring Console for the Logic Operator (shell, typed contracts, mock fixtures).",
   "scripts": {
-    "dev": "vite",
+    "dev": "npm run build:launcher && node dist/launcher/index.js --dev",
+    "dev:hosted": "vite",
     "build": "tsc -b && vite build && npm run build:launcher",
     "build:launcher": "tsc -p launcher/tsconfig.json",
     "typecheck": "tsc -b --noEmit",
@@ -57,5 +58,8 @@
     "workerDirectory": [
       "public"
     ]
+  },
+  "engines": {
+    "node": "^22.19.0 || ^24.0.0 || >=26.0.0"
   }
 }

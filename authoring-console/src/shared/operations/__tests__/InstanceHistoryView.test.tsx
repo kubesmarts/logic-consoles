@@ -83,6 +83,24 @@ describe("InstanceHistoryView", () => {
     expect(screen.getByText("No executions have been indexed for this version.")).toBeInTheDocument();
   });
 
+  it("keeps an accepted receipt pending until indexing, then offers actions on the matching detail", async () => {
+    const user = userEvent.setup();
+    const instance = instanceFixtures[0]!;
+    const getInstance = vi.fn().mockRejectedValueOnce(new Error("Not indexed")).mockResolvedValue(instance);
+    const listInstances = vi.fn().mockResolvedValueOnce([]).mockResolvedValue([instance]);
+    const gateway = createMockGateway({ listInstances, getInstance });
+    const action = vi.fn();
+    render(<QueryClientProvider client={queryClient}>
+      <InstanceHistoryView versionKey={versionKey} gateway={gateway} acceptedId={instance.id}
+        renderActions={(row, refresh) => <button onClick={() => { action(row.id); refresh(); }}>Refresh selected</button>} />
+    </QueryClientProvider>);
+    expect(await screen.findByText(/may still be waiting for indexing/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Retry history" }));
+    await user.click(await screen.findByRole("button", { name: "Refresh selected" }));
+    expect(action).toHaveBeenCalledWith(instance.id);
+    expect(getInstance).toHaveBeenCalledTimes(3);
+  });
+
   it("renders instances table with correct columns", async () => {
     const gateway = createMockGateway();
 
@@ -173,7 +191,7 @@ describe("InstanceHistoryView", () => {
       expect(screen.getByText("Index pending")).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/Data Index is still being populated/)).toBeInTheDocument();
+    expect(screen.getByText(/cannot discover a ready Data Index/)).toBeInTheDocument();
   });
 
   it("handles unreachable gateway error", async () => {

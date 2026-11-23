@@ -1,3 +1,4 @@
+import { createFetchGatewayTransport } from "./gateway-transport.ts";
 /**
  * Direct-browser adapter - implements KubernetesTransport + GatewayTransport.
  *
@@ -11,24 +12,11 @@
 import type {
   KubernetesTransport,
   GatewayTransport,
-  ResourceRef,
   GroupVersionKind,
-  ListOptions,
   WriteCandidate,
   WriteVerb,
   KubeObject,
-  KubeList,
-  WorkflowVersionKey,
-  WorkflowDocument,
-  TopologyGraph,
-  DefinitionResource,
-  InstanceFilter,
-  WorkflowInstance,
-  GatewayLink,
-  WorkflowInput,
-  ExecuteAsyncResult,
-  ExecuteSyncResult,
-  InstanceActionResult,
+  WriteError,
 } from "../contracts/index.ts";
 
 /** Direct browser configuration. */
@@ -38,368 +26,149 @@ export interface DirectBrowserConfig {
   readonly token: string; // Short-lived token, in SESSION MEMORY only
 }
 
-/**
- * Map GVK to plural resource name.
- * Simplified mapping; complete implementation would use API discovery.
- */
-const getPluralResource = (kind: string): string => {
-  const mappings: Record<string, string> = {
-    Namespace: "namespaces",
-    ClusterLogicPlatform: "clusterlogicplatforms",
-    LogicFlowRuntime: "logicflowruntimes",
-    LogicFlowDefinition: "logicflowdefinitions",
-    LogicFlowService: "logicflowservices",
-  };
-  return mappings[kind] ?? `${kind.toLowerCase()}s`;
+const plural: Readonly<Record<string, string>> = {
+  IngressClass: "ingressclasses",
+  Ingress: "ingresses",
+  NetworkPolicy: "networkpolicies",
 };
 
-/** Build Kubernetes API path for a resource. */
-const buildK8sPath = (
+function segment(value: string): string {
+  if (!value || value === "." || value === ".." || value.includes("/")) {
+    throw new Error("Invalid Kubernetes resource path.");
+  }
+  return encodeURIComponent(value);
+}
+
+function resourcePath(
   gvk: GroupVersionKind,
   namespace?: string,
-  name?: string
-): string => {
-  const plural = getPluralResource(gvk.kind);
-  const apiBase = gvk.group === "" ? "/api/v1" : `/apis/${gvk.group}/${gvk.version}`;
+  name?: string,
+): string {
+  const api = gvk.group ? `/apis/${segment(gvk.group)}` : "/api";
+  const scope = namespace ? `/namespaces/${segment(namespace)}` : "";
+  const resource = plural[gvk.kind] ?? `${gvk.kind.toLowerCase()}s`;
+  return `${api}/${segment(gvk.version)}${scope}/${segment(resource)}${name ? "/" + segment(name) : ""}`;
+}
 
-  if (namespace) {
-    const nsPath = `${apiBase}/namespaces/${namespace}/${plural}`;
-    return name ? `${nsPath}/${name}` : nsPath;
-  } else {
-    return name ? `${apiBase}/${plural}/${name}` : `${apiBase}/${plural}`;
+async function kubernetesError(response: Response) {
+  const status = response.status;
+  const data = await response.json().catch(() => ({}));
+  const message =
+    typeof data.message === "string"
+      ? data.message
+      : `Kubernetes API returned HTTP ${status}.`;
+  let writeError: WriteError;
+  if (status === 409) writeError = { kind: "conflict" };
+  else if (status === 403) writeError = { kind: "forbidden", reason: message };
+  else if (status === 400 || status === 422) {
+    const causes = data.details?.causes;
+    const errors =
+      Array.isArray(causes) && causes.length
+        ? causes.map((cause) => ({
+            path: String(cause.field ?? ""),
+            message: String(cause.message ?? message),
+          }))
+        : [{ path: "", message }];
+    writeError = { kind: "admission", errors };
+  } else writeError = { kind: "server-error", status, detail: message };
+  return Object.assign(new Error(message), {
+    status,
+    statusCode: status,
+    writeError,
+  });
+}
+
+export function createDirectBrowserAdapter(
+  config: DirectBrowserConfig,
+  sessionSignal?: AbortSignal,
+): KubernetesTransport & GatewayTransport {
+  async function request<T>(path: string, init: RequestInit): Promise<T> {
+    sessionSignal?.throwIfAborted();
+    const signal =
+      sessionSignal && init.signal
+        ? AbortSignal.any([sessionSignal, init.signal])
+        : (sessionSignal ?? init.signal);
+    let response: Response;
+    try {
+      response = await fetch(config.k8sApiUrl + path, {
+        ...init,
+        signal,
+        redirect: "error",
+        credentials: "omit",
+        headers: {
+          Authorization: `Bearer ${config.token}`,
+          ...(init.body ? { "Content-Type": "application/json" } : {}),
+        },
+      });
+    } catch (cause) {
+      if (signal?.aborted) throw cause;
+      throw Object.assign(new Error("Kubernetes API is unreachable."), {
+        writeError: { kind: "unreachable" },
+      });
+    }
+    if (!response.ok) throw await kubernetesError(response);
+    return response.json() as Promise<T>;
   }
-};
 
-/** Create direct-browser adapter implementing both transports. */
-export const createDirectBrowserAdapter = (
-  config: DirectBrowserConfig
-): KubernetesTransport & GatewayTransport => {
-  const authHeaders = {
-    Authorization: `Bearer ${config.token}`,
-    "Content-Type": "application/json",
-  };
-
-  // Kubernetes Transport implementation
-  const get = async <TSpec = unknown, TStatus = unknown>(
-    ref: ResourceRef,
-    signal?: AbortSignal
-  ): Promise<KubeObject<TSpec, TStatus>> => {
-    const path = buildK8sPath(ref.gvk, ref.namespace, ref.name);
-    const url = `${config.k8sApiUrl}${path}`;
-
-    const response = await fetch(url, {
-      headers: authHeaders,
-      signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`GET failed: ${response.statusText}`);
-    }
-
-    return response.json() as Promise<KubeObject<TSpec, TStatus>>;
-  };
-
-  const list = async <TSpec = unknown, TStatus = unknown>(
-    gvk: GroupVersionKind,
-    options: ListOptions,
-    signal?: AbortSignal
-  ): Promise<KubeList<KubeObject<TSpec, TStatus>>> => {
-    const path = buildK8sPath(gvk, options.namespace);
-    const params = new URLSearchParams();
-
-    if (options.labelSelector) params.set("labelSelector", options.labelSelector);
-    if (options.fieldSelector) params.set("fieldSelector", options.fieldSelector);
-    if (options.limit) params.set("limit", String(options.limit));
-    if (options.continue) params.set("continue", options.continue);
-
-    const query = params.toString();
-    const url = `${config.k8sApiUrl}${path}${query ? `?${query}` : ""}`;
-
-    const response = await fetch(url, {
-      headers: authHeaders,
-      signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`LIST failed: ${response.statusText}`);
-    }
-
-    return response.json() as Promise<KubeList<KubeObject<TSpec, TStatus>>>;
-  };
-
-  const dryRun = async <TSpec = unknown, TStatus = unknown>(
+  async function write<TSpec, TStatus>(
     candidate: WriteCandidate<TSpec>,
     verb: WriteVerb,
-    signal?: AbortSignal
-  ): Promise<KubeObject<TSpec, TStatus>> => {
-    const { object } = candidate;
+    dryRun: boolean,
+    signal?: AbortSignal,
+  ): Promise<KubeObject<TSpec, TStatus>> {
+    const { object, expectedResourceVersion } = candidate;
     const parts = object.apiVersion.split("/");
-    const group = parts.length === 2 ? parts[0] ?? "" : "";
-    const version = parts.length === 2 ? parts[1] ?? "" : parts[0] ?? "";
-
-    const gvk = { group, version, kind: object.kind };
-    const path = buildK8sPath(gvk, object.metadata.namespace, verb === "update" ? object.metadata.name : undefined);
-    const url = `${config.k8sApiUrl}${path}?dryRun=All`;
-
-    const response = await fetch(url, {
+    const version = parts.pop() ?? "";
+    if (
+      verb === "update" &&
+      (!expectedResourceVersion ||
+        (object.metadata.resourceVersion &&
+          expectedResourceVersion !== object.metadata.resourceVersion))
+    ) {
+      throw Object.assign(
+        new Error("The update must carry the reviewed resourceVersion."),
+        { writeError: { kind: "conflict" } },
+      );
+    }
+    const path = resourcePath(
+      { group: parts.join("/"), version, kind: object.kind },
+      object.metadata.namespace,
+      verb === "update" ? object.metadata.name : undefined,
+    );
+    const body =
+      verb === "update"
+        ? {
+            ...object,
+            metadata: {
+              ...object.metadata,
+              resourceVersion: expectedResourceVersion,
+            },
+          }
+        : object;
+    return request(path + (dryRun ? "?dryRun=All" : ""), {
       method: verb === "create" ? "POST" : "PUT",
-      headers: authHeaders,
-      body: JSON.stringify(object),
+      body: JSON.stringify(body),
       signal,
     });
-
-    if (!response.ok) {
-      throw new Error(`DRY RUN failed: ${response.statusText}`);
-    }
-
-    return response.json() as Promise<KubeObject<TSpec, TStatus>>;
-  };
-
-  const create = async <TSpec = unknown, TStatus = unknown>(
-    candidate: WriteCandidate<TSpec>,
-    signal?: AbortSignal
-  ): Promise<KubeObject<TSpec, TStatus>> => {
-    const { object } = candidate;
-    const parts = object.apiVersion.split("/");
-    const group = parts.length === 2 ? parts[0] ?? "" : "";
-    const version = parts.length === 2 ? parts[1] ?? "" : parts[0] ?? "";
-
-    const gvk = { group, version, kind: object.kind };
-    const path = buildK8sPath(gvk, object.metadata.namespace);
-    const url = `${config.k8sApiUrl}${path}`;
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: authHeaders,
-      body: JSON.stringify(object),
-      signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`CREATE failed: ${response.statusText}`);
-    }
-
-    return response.json() as Promise<KubeObject<TSpec, TStatus>>;
-  };
-
-  const update = async <TSpec = unknown, TStatus = unknown>(
-    candidate: WriteCandidate<TSpec>,
-    signal?: AbortSignal
-  ): Promise<KubeObject<TSpec, TStatus>> => {
-    const { object } = candidate;
-    const parts = object.apiVersion.split("/");
-    const group = parts.length === 2 ? parts[0] ?? "" : "";
-    const version = parts.length === 2 ? parts[1] ?? "" : parts[0] ?? "";
-
-    const gvk = { group, version, kind: object.kind };
-    const path = buildK8sPath(gvk, object.metadata.namespace, object.metadata.name);
-    const url = `${config.k8sApiUrl}${path}`;
-
-    const response = await fetch(url, {
-      method: "PUT",
-      headers: authHeaders,
-      body: JSON.stringify(object),
-      signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`UPDATE failed: ${response.statusText}`);
-    }
-
-    return response.json() as Promise<KubeObject<TSpec, TStatus>>;
-  };
-
-  // Gateway Transport implementation
-  const gatewayHeaders = {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  };
-
-  const getTopology = async (namespace: string, signal?: AbortSignal): Promise<TopologyGraph> => {
-    const url = `${config.gatewayUrl}/v1/topology?namespace=${encodeURIComponent(namespace)}`;
-    const response = await fetch(url, { headers: gatewayHeaders, signal });
-
-    if (!response.ok) {
-      throw new Error(`GET topology failed: ${response.statusText}`);
-    }
-
-    return response.json() as Promise<TopologyGraph>;
-  };
-
-  const listDefinitions = async (signal?: AbortSignal): Promise<readonly DefinitionResource[]> => {
-    const url = `${config.gatewayUrl}/v1/definitions/`;
-    const response = await fetch(url, { headers: gatewayHeaders, signal });
-
-    if (!response.ok) {
-      throw new Error(`LIST definitions failed: ${response.statusText}`);
-    }
-
-    return response.json() as Promise<readonly DefinitionResource[]>;
-  };
-
-  const getDefinition = async (
-    key: WorkflowVersionKey,
-    signal?: AbortSignal
-  ): Promise<WorkflowDocument> => {
-    const url = `${config.gatewayUrl}/v1/definitions/${encodeURIComponent(key.namespace)}/${encodeURIComponent(key.workflowName)}/${encodeURIComponent(key.version)}`;
-    const response = await fetch(url, { headers: gatewayHeaders, signal });
-
-    if (!response.ok) {
-      throw new Error(`GET definition failed: ${response.statusText}`);
-    }
-
-    return response.json() as Promise<WorkflowDocument>;
-  };
-
-  const listInstances = async (
-    filter: InstanceFilter,
-    signal?: AbortSignal
-  ): Promise<readonly WorkflowInstance[]> => {
-    const params = new URLSearchParams();
-    if (filter.namespace) params.set("namespace", filter.namespace);
-    if (filter.name) params.set("name", filter.name);
-    if (filter.version) params.set("version", filter.version);
-    if (filter.status) params.set("status", filter.status);
-
-    const query = params.toString();
-    const url = `${config.gatewayUrl}/v1/instances/${query ? `?${query}` : ""}`;
-    const response = await fetch(url, { headers: gatewayHeaders, signal });
-
-    if (!response.ok) {
-      throw new Error(`LIST instances failed: ${response.statusText}`);
-    }
-
-    return response.json() as Promise<readonly WorkflowInstance[]>;
-  };
-
-  const getInstance = async (id: string, signal?: AbortSignal): Promise<WorkflowInstance> => {
-    const url = `${config.gatewayUrl}/v1/instances/${encodeURIComponent(id)}`;
-    const response = await fetch(url, { headers: gatewayHeaders, signal });
-
-    if (!response.ok) {
-      throw new Error(`GET instance failed: ${response.statusText}`);
-    }
-
-    return response.json() as Promise<WorkflowInstance>;
-  };
-
-  const execute = async (
-    link: GatewayLink,
-    input: WorkflowInput,
-    signal?: AbortSignal
-  ): Promise<ExecuteAsyncResult> => {
-    const url = `${config.gatewayUrl}${link.href}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: gatewayHeaders,
-      body: JSON.stringify(input),
-      signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`EXECUTE failed: ${response.statusText}`);
-    }
-
-    return response.json() as Promise<ExecuteAsyncResult>;
-  };
-
-  const executeSync = async (
-    link: GatewayLink,
-    input: WorkflowInput,
-    signal?: AbortSignal
-  ): Promise<ExecuteSyncResult> => {
-    const url = `${config.gatewayUrl}${link.href}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: gatewayHeaders,
-      body: JSON.stringify(input),
-      signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`EXECUTE SYNC failed: ${response.statusText}`);
-    }
-
-    return response.json() as Promise<ExecuteSyncResult>;
-  };
-
-  const suspendInstance = async (
-    link: GatewayLink,
-    instanceId: string,
-    signal?: AbortSignal
-  ): Promise<InstanceActionResult> => {
-    const href = link.href.replace("{id}", encodeURIComponent(instanceId));
-    const url = `${config.gatewayUrl}${href}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: gatewayHeaders,
-      signal,
-    });
-
-    return {
-      instanceId,
-      httpStatus: response.status,
-      raw: await response.json(),
-    };
-  };
-
-  const resumeInstance = async (
-    link: GatewayLink,
-    instanceId: string,
-    signal?: AbortSignal
-  ): Promise<InstanceActionResult> => {
-    const href = link.href.replace("{id}", encodeURIComponent(instanceId));
-    const url = `${config.gatewayUrl}${href}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: gatewayHeaders,
-      signal,
-    });
-
-    return {
-      instanceId,
-      httpStatus: response.status,
-      raw: await response.json(),
-    };
-  };
-
-  const cancelInstance = async (
-    link: GatewayLink,
-    instanceId: string,
-    signal?: AbortSignal
-  ): Promise<InstanceActionResult> => {
-    const href = link.href.replace("{id}", encodeURIComponent(instanceId));
-    const url = `${config.gatewayUrl}${href}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: gatewayHeaders,
-      signal,
-    });
-
-    return {
-      instanceId,
-      httpStatus: response.status,
-      raw: await response.json(),
-    };
-  };
+  }
 
   return {
-    // KubernetesTransport
-    get,
-    list,
-    dryRun,
-    create,
-    update,
-    // GatewayTransport
-    getTopology,
-    listDefinitions,
-    getDefinition,
-    listInstances,
-    getInstance,
-    execute,
-    executeSync,
-    suspendInstance,
-    resumeInstance,
-    cancelInstance,
+    get: (ref, signal) =>
+      request(resourcePath(ref.gvk, ref.namespace, ref.name), { signal }),
+    list: (gvk, { namespace, ...options }, signal) => {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(options)) {
+        if (value !== undefined) params.set(key, String(value));
+      }
+      const query = params.toString();
+      return request(
+        resourcePath(gvk, namespace) + (query ? "?" + query : ""),
+        { signal },
+      );
+    },
+    create: (candidate, signal) => write(candidate, "create", false, signal),
+    update: (candidate, signal) => write(candidate, "update", false, signal),
+    dryRun: (candidate, verb, signal) => write(candidate, verb, true, signal),
+    ...createFetchGatewayTransport(config.gatewayUrl, sessionSignal),
   };
-};
+}

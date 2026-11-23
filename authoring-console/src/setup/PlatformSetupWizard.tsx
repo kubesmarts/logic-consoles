@@ -1,3 +1,5 @@
+import { RuntimePersistenceStep } from "./steps/RuntimePersistenceStep.tsx";
+import { usePlatform } from "./usePlatform.ts";
 /**
  * Platform setup wizard — Packet D1 deliverable.
  * Guides an admin from "no platform" to a submitted, reconciling ClusterLogicPlatform.
@@ -14,7 +16,7 @@ import { type ReactNode, useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Wizard, WizardStep, EmptyState, EmptyStateBody, Bullseye, Spinner, Button } from "@patternfly/react-core";
 import { useConsole } from "../app/ConsoleContext.tsx";
-import { LOGIC_GROUP, LOGIC_VERSION, LogicKinds, type ClusterLogicPlatformSpec, type KubeObject } from "../contracts/index.ts";
+import { LOGIC_GROUP, type ClusterLogicPlatformSpec, type KubeObject } from "../contracts/index.ts";
 import type { ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus } from "./buildPlatformCR.ts";
 import type { PlatformSetupDraft } from "./types.ts";
 import { TargetNamespaceStep } from "./steps/TargetNamespaceStep.tsx";
@@ -31,38 +33,24 @@ interface PlatformSetupWizardProps {
 }
 
 export const PlatformSetupWizard = ({ onComplete, onCancel, editMode = false }: PlatformSetupWizardProps): ReactNode => {
-  const { session, kubernetes, capabilities } = useConsole();
+  const { session, capabilities } = useConsole();
 
-  // Discover existing platform
-  const discoveryQuery = useQuery({
-    queryKey: [session.sessionId, session.context.contextName, "platform-discovery"],
-    queryFn: ({ signal }) =>
-      kubernetes.get<ClusterLogicPlatformSpec>(
-        { gvk: { group: LOGIC_GROUP, version: LOGIC_VERSION, kind: LogicKinds.ClusterLogicPlatform }, name: "cluster-platform" },
-        signal,
-      ).catch((err: unknown) => {
-        // Check if it's a 403
-        if (err && typeof err === "object" && "statusCode" in err && err.statusCode === 403) {
-          return null; // Platform discovery forbidden
-        }
-        throw err;
-      }),
-  });
+  const discoveryQuery = usePlatform();
 
   // Check capabilities
-  const canReadPlatform = discoveryQuery.data !== undefined;
+  const verb = discoveryQuery.data ? "update" : "create";
   const canEditPlatformQuery = useQuery({
-    queryKey: [session.sessionId, "can-edit-platform"],
+    queryKey: [session.sessionId, "can-write-platform", verb],
     queryFn: ({ signal }) =>
       capabilities.canI(
         {
           group: LOGIC_GROUP,
           resource: "clusterlogicplatforms",
-          verb: "update",
+          verb,
         },
         signal,
       ),
-    enabled: canReadPlatform && discoveryQuery.data !== null,
+    enabled: discoveryQuery.isSuccess,
   });
 
   const canCreateNamespaceQuery = useQuery({
@@ -78,55 +66,8 @@ export const PlatformSetupWizard = ({ onComplete, onCancel, editMode = false }: 
       ),
   });
 
-  // Initialize draft from existing platform in edit mode
-  const initializeDraft = (): PlatformSetupDraft => {
-    if (editMode && discoveryQuery.data && discoveryQuery.data.spec) {
-      const spec = discoveryQuery.data.spec as ClusterLogicPlatformCRSpec;
-      return {
-        targetNamespace: spec.targetNamespace || "",
-        executionMode: spec.dataIndex ? "history-enabled" : "quick-run",
-        gatewayIngress: {
-          enabled: spec.gateway?.ingress?.enabled ?? false,
-          host: spec.gateway?.ingress?.host,
-          ingressClassName: spec.gateway?.ingress?.ingressClassName,
-        },
-        dataIndex: spec.dataIndex?.persistence?.postgresql
-          ? {
-              postgresqlSecretName: spec.dataIndex.persistence.postgresql.secretRef.name,
-              postgresqlServiceName: spec.dataIndex.persistence.postgresql.serviceRef.name,
-              postgresqlServiceNamespace: spec.dataIndex.persistence.postgresql.serviceRef.namespace,
-              databaseName: spec.dataIndex.persistence.postgresql.serviceRef.databaseName,
-              databaseSchema: spec.dataIndex.persistence.postgresql.serviceRef.databaseSchema,
-            }
-          : undefined,
-        vector: spec.vector
-          ? {
-              watchNamespaces: spec.vector.watchNamespaces as string[] | undefined,
-              debugEvents: spec.vector.debugEvents,
-            }
-          : undefined,
-      };
-    }
-    return {
-      targetNamespace: "",
-      executionMode: "history-enabled",
-      gatewayIngress: {
-        enabled: true,
-      },
-    };
-  };
-
-  // Wizard state
-  const [draft, setDraft] = useState<PlatformSetupDraft>(initializeDraft());
-
-  const [currentStep, setCurrentStep] = useState(0);
-
-  const handleDraftUpdate = useCallback((updates: Partial<PlatformSetupDraft>): void => {
-    setDraft((prev) => ({ ...prev, ...updates }));
-  }, []);
-
   // Loading state
-  if (discoveryQuery.isPending || canEditPlatformQuery.isPending || canCreateNamespaceQuery.isPending) {
+  if (discoveryQuery.isPending || (discoveryQuery.isSuccess && canEditPlatformQuery.isPending) || canCreateNamespaceQuery.isPending) {
     return (
       <Bullseye>
         <Spinner aria-label="Loading platform setup" />
@@ -163,7 +104,7 @@ export const PlatformSetupWizard = ({ onComplete, onCancel, editMode = false }: 
             <strong>Target namespace:</strong> {(existingPlatform?.spec as ClusterLogicPlatformSpec)?.targetNamespace}
           </p>
         </EmptyStateBody>
-        <Button variant="primary" onClick={() => window.location.reload()}>
+        <Button variant="primary" onClick={onCancel}>
           View platform
         </Button>
       </EmptyState>
@@ -181,6 +122,64 @@ export const PlatformSetupWizard = ({ onComplete, onCancel, editMode = false }: 
       </EmptyState>
     );
   }
+
+  if (!platformCanEdit) {
+    return <EmptyState titleText="Platform creation unavailable" headingLevel="h2"><EmptyStateBody>Check your permission to create ClusterLogicPlatform resources.</EmptyStateBody></EmptyState>;
+  }
+  return <PlatformForm {...{ existingPlatform, canCreateNamespace, editMode, onComplete, onCancel }} />;
+};
+
+function PlatformForm({ existingPlatform, canCreateNamespace, editMode, onComplete, onCancel }: PlatformSetupWizardProps & {
+  existingPlatform: KubeObject<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus> | null;
+  canCreateNamespace: boolean;
+}): ReactNode {
+  // Initialize draft from existing platform in edit mode
+  const initializeDraft = (): PlatformSetupDraft => {
+    if (editMode && existingPlatform && existingPlatform.spec) {
+      const spec = existingPlatform.spec as ClusterLogicPlatformCRSpec;
+      return {
+        runtimePersistence: spec.runtime?.persistence,
+        targetNamespace: spec.targetNamespace || "",
+        executionMode: spec.dataIndex ? "history-enabled" : "quick-run",
+        gatewayIngress: {
+          enabled: spec.gateway?.ingress?.enabled ?? false,
+          host: spec.gateway?.ingress?.host,
+          ingressClassName: spec.gateway?.ingress?.ingressClassName,
+        },
+        dataIndex: spec.dataIndex?.persistence?.postgresql
+          ? {
+              postgresqlSecretName: spec.dataIndex.persistence.postgresql.secretRef?.name ?? "",
+              postgresqlServiceName: spec.dataIndex.persistence.postgresql.serviceRef?.name ?? "",
+              postgresqlServiceNamespace: spec.dataIndex.persistence.postgresql.serviceRef?.namespace,
+              databaseName: spec.dataIndex.persistence.postgresql.serviceRef?.databaseName,
+              databaseSchema: spec.dataIndex.persistence.postgresql.serviceRef?.databaseSchema,
+            }
+          : undefined,
+        vector: spec.vector
+          ? {
+              watchNamespaces: spec.vector.watchNamespaces as string[] | undefined,
+              debugEvents: spec.vector.debugEvents,
+            }
+          : undefined,
+      };
+    }
+    return {
+      targetNamespace: "",
+      executionMode: "history-enabled",
+      gatewayIngress: {
+        enabled: true,
+      },
+    };
+  };
+
+  // Wizard state
+  const [draft, setDraft] = useState<PlatformSetupDraft>(initializeDraft);
+
+  const [currentStep, setCurrentStep] = useState(0);
+
+  const handleDraftUpdate = useCallback((updates: Partial<PlatformSetupDraft>): void => {
+    setDraft((prev) => ({ ...prev, ...updates }));
+  }, []);
 
   // Setup wizard for absent or discovery-forbidden platform, or edit mode
   return (
@@ -206,18 +205,17 @@ export const PlatformSetupWizard = ({ onComplete, onCancel, editMode = false }: 
       <WizardStep name="Execution mode" id="execution-mode">
         <ExecutionModeStep draft={draft} onUpdate={handleDraftUpdate} />
       </WizardStep>
-      {draft.executionMode === "history-enabled" && (
-        <>
-          <WizardStep name="Data Index" id="data-index">
-            <DataIndexStep draft={draft} onUpdate={handleDraftUpdate} />
-          </WizardStep>
-          <WizardStep name="Vector" id="vector">
-            <VectorStep draft={draft} onUpdate={handleDraftUpdate} />
-          </WizardStep>
-        </>
-      )}
+      <WizardStep name="Data Index" id="data-index" isHidden={draft.executionMode !== "history-enabled"}>
+        <DataIndexStep draft={draft} onUpdate={handleDraftUpdate} />
+      </WizardStep>
+      <WizardStep name="Vector" id="vector" isHidden={draft.executionMode !== "history-enabled"}>
+        <VectorStep draft={draft} onUpdate={handleDraftUpdate} />
+      </WizardStep>
       <WizardStep name="Gateway" id="gateway">
         <GatewayStep draft={draft} onUpdate={handleDraftUpdate} />
+      </WizardStep>
+      <WizardStep name="Runtime persistence" id="runtime-persistence">
+        <RuntimePersistenceStep value={draft.runtimePersistence} change={runtimePersistence => handleDraftUpdate({ runtimePersistence })} />
       </WizardStep>
       <WizardStep name="Review" id="review">
         <ReviewStep

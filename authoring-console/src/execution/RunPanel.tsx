@@ -6,7 +6,7 @@
  * dialects, or absent schemas. Executes via the selected version's advertised
  * execute/executeSync link. EXACTLY ONE POST per attempt, no auto-retry.
  */
-import { useState, type ReactNode, useCallback } from "react";
+import { useMemo, useState, type ReactNode, useCallback } from "react";
 import {
   Alert,
   Button,
@@ -33,6 +33,7 @@ import type {
   WorkflowDocument,
   WorkflowInput,
 } from "../contracts/index.ts";
+import { operationLink, unknownOutcome } from "./operation-link.ts";
 import { SchemaForm } from "./SchemaForm.tsx";
 import { getSupportedInputSchema, validateInput, initializeFormData } from "./schema-utils.ts";
 import type { RunState, ExecutionMode, ExecutionResult } from "./types.ts";
@@ -43,10 +44,14 @@ export interface RunPanelProps {
   readonly gateway: GatewayTransport;
   readonly isOpen: boolean;
   readonly onClose: () => void;
+  readonly historyEnabled?: boolean;
+  readonly renderHistory?: (acceptedId?: string) => ReactNode;
 }
 
-export const RunPanel = ({ definition, flow, gateway, isOpen, onClose }: RunPanelProps): ReactNode => {
-  const schema = getSupportedInputSchema(flow);
+export const RunPanel = ({ definition, flow, gateway, isOpen, onClose, historyEnabled, renderHistory }: RunPanelProps): ReactNode => {
+  const schema = useMemo(() => getSupportedInputSchema(flow), [flow]);
+  const [outcomeUnknown, setOutcomeUnknown] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const hasSchemaSupport = schema !== null;
 
   const [state, setState] = useState<RunState>(() => ({
@@ -60,18 +65,14 @@ export const RunPanel = ({ definition, flow, gateway, isOpen, onClose }: RunPane
   }));
 
   const handleExecute = useCallback(async (): Promise<void> => {
+    setOutcomeUnknown(false);
+    setHistoryOpen(false);
     setState((s) => ({ ...s, isExecuting: true, result: null, error: null }));
 
     try {
       // Build the input payload
       let input: WorkflowInput;
       if (state.inputMode === "form" && schema) {
-        // Validate form data
-        const errors = validateInput(schema, state.formData);
-        if (errors.length > 0) {
-          setState((s) => ({ ...s, isExecuting: false, error: errors.join("; ") }));
-          return;
-        }
         input = state.formData;
       } else {
         // Parse JSON input
@@ -83,12 +84,14 @@ export const RunPanel = ({ definition, flow, gateway, isOpen, onClose }: RunPane
         }
       }
 
-      // Get the appropriate link
-      const link =
-        state.executionMode === "sync"
-          ? definition._links.executeSync
-          : definition._links.execute;
-
+      if (input === null || typeof input !== "object" || Array.isArray(input)) {
+        throw new Error("Enter a JSON object for this runner.");
+      }
+      if (schema) {
+        const errors = validateInput(schema, input);
+        if (errors.length) throw new Error(errors.join("; "));
+      }
+      const link = operationLink(definition, state.executionMode === "sync" ? "executeSync" : "execute");
       if (!link) {
         setState((s) => ({
           ...s,
@@ -99,25 +102,26 @@ export const RunPanel = ({ definition, flow, gateway, isOpen, onClose }: RunPane
       }
 
       // Execute EXACTLY ONCE with an AbortController
-      const controller = new AbortController();
+      const signal = AbortSignal.timeout(120_000);
       let result: ExecutionResult;
       if (state.executionMode === "sync") {
-        const syncResult = await gateway.executeSync(link, input, controller.signal);
+        const syncResult = await gateway.executeSync(link, input, signal);
         result = { mode: "sync", output: syncResult.output, raw: syncResult.raw };
       } else {
-        const asyncResult = await gateway.execute(link, input, controller.signal);
+        const asyncResult = await gateway.execute(link, input, signal);
         result = { mode: "async", instanceId: asyncResult.instanceId, raw: asyncResult.raw };
       }
 
       setState((s) => ({ ...s, isExecuting: false, result }));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Execution failed";
-      // A timeout stays UNKNOWN — do not auto-retry
+      const uncertain = unknownOutcome(err);
+      setOutcomeUnknown(uncertain);
       setState((s) => ({
         ...s,
         isExecuting: false,
-        error: message.includes("timeout")
-          ? "Request timed out. The workflow may have started. Check instance history."
+        error: uncertain
+          ? "The request timed out or the connection was lost. The workflow may have started."
           : message,
       }));
     }
@@ -128,7 +132,17 @@ export const RunPanel = ({ definition, flow, gateway, isOpen, onClose }: RunPane
   };
 
   const handleInputModeChange = (mode: "form" | "json"): void => {
-    setState((s) => ({ ...s, inputMode: mode }));
+    if (mode === "json") {
+      setState((s) => ({ ...s, inputMode: mode, jsonInput: JSON.stringify(s.formData, null, 2), error: null }));
+      return;
+    }
+    try {
+      const parsed = JSON.parse(state.jsonInput);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+      setState((s) => ({ ...s, inputMode: mode, formData: parsed, error: null }));
+    } catch {
+      setState((s) => ({ ...s, error: "Enter a JSON object before switching to the form." }));
+    }
   };
 
   const handleFormChange = (formData: Record<string, unknown>): void => {
@@ -257,7 +271,7 @@ export const RunPanel = ({ definition, flow, gateway, isOpen, onClose }: RunPane
             isDisabled={state.isExecuting}
             style={{ marginBottom: "1rem" }}
           >
-            {state.executionMode === "sync" ? "Run and wait" : "Start in background"}
+            {outcomeUnknown && historyEnabled === false ? "Start another run" : state.executionMode === "sync" ? "Run and wait" : "Start in background"}
           </Button>
 
           {/* Error display */}
@@ -284,14 +298,22 @@ export const RunPanel = ({ definition, flow, gateway, isOpen, onClose }: RunPane
                       <strong>Instance ID:</strong> {state.result.instanceId}
                     </Content>
                     <Content component="p" style={{ marginTop: "0.5rem", fontSize: "0.875rem" }}>
-                      The workflow has been started in the background. View instance history to
-                      track its progress.
+                      The gateway accepted the request.
                     </Content>
                   </>
                 )}
               </CardBody>
             </Card>
           )}
+          {(outcomeUnknown || state.result) && (historyEnabled === false ? (
+            <Content component="p">Instance history is disabled. Enable Data Index on the platform to see future executions here.</Content>
+          ) : renderHistory && (
+            <>
+              {outcomeUnknown && <Content component="p">History is filtered to this version. Without an instance ID, a row or an empty result cannot confirm this request's outcome.</Content>}
+              <Button variant="link" onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? "Hide instance history" : "View instance history"}</Button>
+              {historyOpen && renderHistory(state.result?.mode === "async" ? state.result.instanceId : undefined)}
+            </>
+          ))}
         </div>
       </DrawerContentBody>
     </DrawerPanelContent>

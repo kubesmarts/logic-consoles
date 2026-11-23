@@ -4,7 +4,7 @@
  */
 import type { KubeObject } from "../contracts/index.ts";
 import { LOGIC_GROUP, LOGIC_VERSION, LogicKinds } from "../contracts/index.ts";
-import type { PlatformSetupDraft } from "./types.ts";
+import { platformVectorConfig, type RuntimePersistence, type PlatformSetupDraft } from "./types.ts";
 
 export interface ClusterLogicPlatformCRSpec {
   readonly targetNamespace: string;
@@ -37,7 +37,7 @@ export interface ClusterLogicPlatformCRSpec {
       readonly ingressClassName?: string;
     };
   };
-  readonly runtime?: unknown;
+  readonly runtime?: { persistence?: RuntimePersistence; [field: string]: unknown };
   readonly [extra: string]: unknown;
 }
 
@@ -78,71 +78,45 @@ export interface ClusterLogicPlatformCRStatus {
   readonly [extra: string]: unknown;
 }
 
-export function buildPlatformCR(draft: PlatformSetupDraft): KubeObject<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus> {
+export function buildPlatformCR(draft: PlatformSetupDraft, existing?: KubeObject<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus> | null): KubeObject<ClusterLogicPlatformCRSpec, ClusterLogicPlatformCRStatus> {
+  const previous = existing?.spec;
+  const pg = previous?.dataIndex?.persistence?.postgresql;
+  const db = draft.dataIndex;
+  const { host, ingressClassName, enabled } = draft.gatewayIngress;
   const spec: ClusterLogicPlatformCRSpec = {
+    ...previous,
+    ...(draft.runtimePersistence !== undefined && { runtime: { ...previous?.runtime, persistence: draft.runtimePersistence ?? undefined } }),
     targetNamespace: draft.targetNamespace,
-    ...(draft.executionMode === "history-enabled" && draft.dataIndex
-      ? {
-          dataIndex: {
-            persistence: {
-              postgresql: {
-                secretRef: {
-                  name: draft.dataIndex.postgresqlSecretName,
-                },
-                serviceRef: {
-                  name: draft.dataIndex.postgresqlServiceName,
-                  ...(draft.dataIndex.postgresqlServiceNamespace && {
-                    namespace: draft.dataIndex.postgresqlServiceNamespace,
-                  }),
-                  ...(draft.dataIndex.databaseName && {
-                    databaseName: draft.dataIndex.databaseName,
-                  }),
-                  ...(draft.dataIndex.databaseSchema && {
-                    databaseSchema: draft.dataIndex.databaseSchema,
-                  }),
-                },
-              },
-            },
+    gateway: {
+      ...previous?.gateway,
+      ingress: enabled ? { ...previous?.gateway?.ingress, enabled, host, ingressClassName } : undefined,
+    },
+    dataIndex: draft.executionMode === "history-enabled" && db ? {
+      ...previous?.dataIndex,
+      persistence: {
+        ...previous?.dataIndex?.persistence,
+        postgresql: {
+          ...pg,
+          secretRef: { ...pg?.secretRef, name: db.postgresqlSecretName },
+          serviceRef: {
+            ...pg?.serviceRef,
+            name: db.postgresqlServiceName,
+            namespace: db.postgresqlServiceNamespace || undefined,
+            databaseName: db.databaseName || undefined,
+            databaseSchema: db.databaseSchema || undefined,
           },
-        }
-      : {}),
-    ...(draft.executionMode === "history-enabled" && draft.vector
-      ? {
-          vector: {
-            ...(draft.vector.watchNamespaces && {
-              watchNamespaces: draft.vector.watchNamespaces,
-            }),
-            ...(draft.vector.debugEvents !== undefined && {
-              debugEvents: draft.vector.debugEvents,
-            }),
-            application: {},
-          },
-        }
-      : {}),
-    ...(draft.gatewayIngress.enabled
-      ? {
-          gateway: {
-            ingress: {
-              enabled: true,
-              ...(draft.gatewayIngress.host && {
-                host: draft.gatewayIngress.host,
-              }),
-              ...(draft.gatewayIngress.ingressClassName && {
-                ingressClassName: draft.gatewayIngress.ingressClassName,
-              }),
-            },
-          },
-        }
-      : {}),
+        },
+      },
+    } : draft.executionMode === "history-enabled" ? previous?.dataIndex : undefined,
+    vector: draft.executionMode === "history-enabled"
+      ? { ...previous?.vector, ...platformVectorConfig(draft) }
+      : undefined,
   };
 
   return {
     apiVersion: `${LOGIC_GROUP}/${LOGIC_VERSION}`,
     kind: LogicKinds.ClusterLogicPlatform,
-    metadata: {
-      name: "cluster-platform",
-      namespace: "",
-    },
+    metadata: existing?.metadata ?? { name: "cluster-platform" },
     spec,
   };
 }

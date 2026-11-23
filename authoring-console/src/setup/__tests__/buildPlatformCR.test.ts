@@ -78,7 +78,8 @@ describe("buildPlatformCR", () => {
 
     expect(cr.spec?.dataIndex).toBeUndefined();
     expect(cr.spec?.vector).toBeUndefined();
-    expect(cr.spec?.gateway).toBeUndefined();
+    expect(cr.spec?.gateway).toBeDefined();
+    expect(cr.spec?.gateway?.ingress).toBeUndefined();
   });
 
   it("omits gateway ingress fields when disabled", () => {
@@ -94,7 +95,8 @@ describe("buildPlatformCR", () => {
 
     const cr = buildPlatformCR(draft);
 
-    expect(cr.spec?.gateway).toBeUndefined();
+    expect(cr.spec?.gateway).toBeDefined();
+    expect(cr.spec?.gateway?.ingress).toBeUndefined();
   });
 
   it("handles Data Index config without optional service namespace", () => {
@@ -155,4 +157,29 @@ describe("buildPlatformCR", () => {
     expect(cr.spec?.vector).toBeDefined();
     expect(cr.spec?.gateway).toBeDefined();
   });
+});
+
+it("writes independent runtime and Quartz datastores and supports sharing or disabling them on edit", () => {
+  const runtime = { postgresql: { secretRef: { name: "pg" }, serviceRef: { name: "db", databaseSchema: "state" }, tls: { enabled: true } } };
+  const quartz = { postgresql: { secretRef: { name: "scheduler" }, serviceRef: { name: "db", databaseSchema: "timers" } } };
+  const draft: PlatformSetupDraft = {
+    targetNamespace: "workflows", executionMode: "quick-run", gatewayIngress: { enabled: false },
+    runtimePersistence: { runtime, quartz },
+  };
+  const created = buildPlatformCR(draft);
+  expect(created.spec?.runtime?.persistence).toEqual({ runtime, quartz });
+  const shared = buildPlatformCR({ ...draft, runtimePersistence: { runtime } }, created);
+  expect(shared.spec?.runtime?.persistence).toEqual({runtime});
+  expect(buildPlatformCR({ ...draft, runtimePersistence: null }, shared).spec?.runtime?.persistence).toBeUndefined();
+});
+
+it("includes the untouched Vector defaults in history-enabled creates and updates", () => {
+  const draft: PlatformSetupDraft = {
+    targetNamespace: "workflows", executionMode: "history-enabled", gatewayIngress: { enabled: false },
+  };
+  const existing = buildPlatformCR({ ...draft, executionMode: "quick-run" });
+  expect(existing.spec?.vector).toBeUndefined();
+  for (const candidate of [buildPlatformCR(draft), buildPlatformCR(draft, existing)]) {
+    expect(candidate.spec?.vector).toEqual({ watchNamespaces: ["workflows"], debugEvents: false });
+  }
 });

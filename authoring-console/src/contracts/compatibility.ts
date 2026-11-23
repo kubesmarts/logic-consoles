@@ -13,6 +13,7 @@
 export type VersionSource =
   /** The value verified against a released operator tag / fixtures. */
   | "tested"
+  | "development"
   /** Read from the live cluster/images at connect time. */
   | "detected"
   /** Operator or admin override. */
@@ -27,6 +28,7 @@ export interface CompatibilityEntry {
   readonly label: string;
   /** Tested version string, if a tested value exists. */
   readonly testedVersion?: string;
+  readonly baseline?: string;
   /** Detected version string read from the cluster, if readable. */
   readonly detectedVersion?: string;
   /** Image digest where available (a tag alone cannot identify a build). */

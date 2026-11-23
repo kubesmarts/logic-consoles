@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "composite": true,
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.launcher.tsbuildinfo",
+    "tsBuildInfoFile": "../dist/launcher/.tsbuildinfo",
     "target": "ES2023",
     "lib": ["ES2023"],
     "module": "NodeNext",
