@@ -56,3 +56,24 @@ test("topology edges terminate in visible directional markers", async ({
       .first(),
   ).toBeVisible();
 });
+
+test("opens the deployed version's diagram from Workflows and fits it on each visit", async ({ page }) => {
+  const document = { dsl: "1.1.0", namespace: "default", name: "orders", version: "2.0.0" };
+  await page.route("**/api/k8s/list", route => route.fulfill({ json: { items: [] } }));
+  await page.route("**/api/gateway/definitions", route => route.fulfill({ json: [document] }));
+  await page.route("**/api/gateway/definition/default/orders/2.0.0", route =>
+    route.fulfill({ json: { document, do: [{ acknowledgeOrder: { set: { accepted: true } } }] } }));
+
+  await openLauncher(page, "/workflows");
+  await page.getByRole("row").filter({ hasText: "orders" }).getByRole("button").click();
+  await page.getByRole("button", { name: "2.0.0" }).click();
+  const preview = page.getByTestId("diagram-preview");
+  const task = preview.locator(".react-flow__node").filter({ hasText: "acknowledgeOrder" });
+  for (let visit = 0; visit < 2; visit++) {
+    await expect(page.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true");
+    await expect(preview).toHaveCount(0);
+    await page.getByRole("tab", { name: "Diagram" }).click();
+    await expect(task).toBeInViewport();
+    await page.getByRole("tab", { name: "Details" }).click();
+  }
+});

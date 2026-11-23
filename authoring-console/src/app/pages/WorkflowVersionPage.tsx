@@ -175,7 +175,8 @@ export const WorkflowVersionPage = (): ReactNode => {
             </DescriptionList>
           </Tab>
           <Tab eventKey="diagram" title={<TabTitleText>Diagram</TabTitleText>}>
-            <DiagramTab versionKey={versionKey} />
+            {/* React Flow measures its viewport on mount. Inactive tab panels have no dimensions. */}
+            {activeTab === "diagram" && <DiagramTab versionKey={versionKey} />}
           </Tab>
           <Tab eventKey="yaml" title={<TabTitleText>YAML</TabTitleText>}>
             {row.crName ? <YamlTab resourceName={row.crName} namespace={namespace} /> : <Content component="p">A unique Kubernetes CR could not be resolved for this version.</Content>}
