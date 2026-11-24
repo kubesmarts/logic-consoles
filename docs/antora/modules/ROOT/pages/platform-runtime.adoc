@@ -1,0 +1,18 @@
+= Configure a platform and runtime
+
+The cluster administrator installs Logic Operator separately. If the console reports missing operator APIs, follow the {operator-docs}/logic-operator/2.0.0-Alpha4/deployment/install.html[operator installation guide] and check again. When a platform and runtime already exist, an author with workflow write access can proceed to xref:author-publish.adoc[].
+
+== Configure the cluster platform
+
+. Open *Platform*. Select *Set up platform* for a new installation or *Edit platform* for the existing cluster-wide resource.
+. Choose the target namespace for platform services. This is distinct from the namespace where you publish workflows. The target namespace is immutable after creation.
+. Select quick execution or execution with history. For history, configure Data Index with the PostgreSQL service, database name, schema, and credential Secret. Use the {operator-docs}/logic-operator/2.0.0-Alpha4/samples/persistence.html[operator's PostgreSQL example] for a demo installation. Supply Secret references in the wizard.
+. Configure Vector for workflow logs and the gateway address for the cluster. Use the operator-supported ingress-nginx configuration on Kubernetes or KIND, or the gateway Route on OpenShift.
+. Under *Runtime persistence*, configure PostgreSQL storage if runtimes will use PlatformDB. Check the database name and schema for workflow state, and configure a separate Quartz datastore if needed.
+. On *Review*, inspect the component configuration and YAML. Use *Dry Run* to check the candidate against Kubernetes admission. Create or update the resource and follow its reconciliation status.
+
+== Configure the runtime
+
+Open *Runtimes* and create a runtime in the namespace where you intend to publish. Choose ephemeral storage for transient state or *PlatformDB* to use the platform's persistence configuration. With PlatformDB selected, review the linked platform and the runtime and Quartz schemas. Review replicas, structured JSON logging, and security settings.
+
+Inspect the YAML for advanced fields before submission. After submitting, check the runtime's ready replicas in *Runtimes*. A successful API write and a ready runtime are separate stages.

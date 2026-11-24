@@ -1,0 +1,52 @@
+name: Build and deploy console documentation
+
+on:
+  pull_request:
+    paths: &docs_paths
+      - 'docs/antora/**'
+      - 'authoring-console/docs/design/**'
+      - '.github/workflows/deploy-docs.yml'
+  push:
+    branches: [main]
+    paths: *docs_paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: docs/antora/package-lock.json
+      - run: npm ci
+        working-directory: docs/antora
+      - run: npm run build
+        working-directory: docs/antora
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          path: docs/antora/target/generated-docs
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - id: deployment
+        uses: actions/deploy-pages@v4

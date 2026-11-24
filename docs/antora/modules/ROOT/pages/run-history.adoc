@@ -1,0 +1,20 @@
+= Run a workflow and inspect history
+
+Open *Workflows*, expand a family, and select the exact version you want to run. *Details* identifies its namespace, runtime, and Kubernetes definition name. *Diagram* displays the workflow tasks. *YAML* shows the deployed custom resource.
+
+image::version.png[Version detail with the Run this version button and Instance history tab]
+
+== Choose an execution mode
+
+Select *Run this version*. The console generates input fields for supported inline schemas. Use JSON input for workflows without a schema or with an unsupported schema.
+
+* *Run and wait* calls the gateway synchronously and shows the response directly.
+* *Start in background* submits an asynchronous execution. Keep the returned instance ID to locate the run once Data Index has indexed it.
+
+If a submission times out and the outcome is unknown, check the instance history before submitting again. A second submission can start another execution.
+
+== Inspect history and topology
+
+Select *Instance history* on the version page. History requires a working Data Index connected through the gateway. A newly accepted asynchronous execution can take time to appear. Open *Details* on a row to inspect the instance. Available lifecycle actions depend on the gateway's advertised links and the state of the instance. Terminal instances retain their details.
+
+Open *Topology* to see the gateway's graph for the selected namespace. Arrows point to the target of each relationship. Select a definition to open its deployed version. Use the list view to inspect nodes without navigating the graph.

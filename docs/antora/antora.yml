@@ -1,0 +1,13 @@
+name: authoring-console
+title: Authoring Console
+version: dev
+display_version: Development
+nav:
+  - modules/ROOT/nav.adoc
+asciidoc:
+  attributes:
+    page-pagination: ''
+    sectanchors: ''
+    source-highlighter: highlight.js
+    operator-docs: https://kubesmarts.org/logic-operator
+    data-index-docs: https://kubesmarts.org/logic-apps

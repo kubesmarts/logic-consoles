@@ -1,0 +1,12 @@
+= Authoring Console
+
+The Authoring Console is the browser interface for Logic Operator. Administrators configure the cluster platform and workflow runtimes. Authors use those runtimes to publish versioned workflow definitions, execute them through the gateway, and inspect their history.
+
+* xref:getting-started.adoc[Connect and run your first workflow] on the operator's KIND demo.
+* xref:platform-runtime.adoc[Set up the platform and runtime] on a cluster where the operator is already installed.
+* xref:author-publish.adoc[Create a workflow from an example] and publish it to a runtime.
+* xref:run-history.adoc[Inspect a deployed version] and follow a run through to its result.
+
+image::workflows.png[Workflows in the default namespace with the hello-world family expanded]
+
+These pages describe the development branch. Open *Compatibility* in the console to see its component baseline and available observations for your cluster. The {operator-docs}/[Logic Operator documentation] covers installation, custom resources, and gateway deployment. The {data-index-docs}/[Data Index documentation] covers indexing and storage.
