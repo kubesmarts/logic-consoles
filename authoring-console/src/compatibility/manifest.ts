@@ -2,7 +2,7 @@ import type { CompatibilityManifest } from "../contracts/index.ts";
 import { LOGIC_GROUP_VERSION } from "../contracts/index.ts";
 
 export const devBaselineCompatibilityManifest: CompatibilityManifest = {
-  consoleVersion: "0.0.0",
+  consoleVersion: __CONSOLE_VERSION__,
   operatorRelease: "b9a71660267f0cad794b95e010569b280a932da8",
   apiGroupVersion: LOGIC_GROUP_VERSION,
   certified: false,

@@ -1,0 +1,120 @@
+name: Release Authoring Console
+
+# Run manually from main. The workflow validates the version, runs the CI checks, builds the
+# launcher executables, then creates the vX.Y.Z tag and the GitHub release (auto-generated
+# notes, executables and SHA256SUMS). Nothing is committed to the repository: the version is
+# supplied at build time.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, without the leading v (for example 2.0.0-Alpha4)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  prepare:
+    name: Validate version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Releases must be dispatched from main (selected ${GITHUB_REF})"
+          exit 1
+      - name: Validate version and tag
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$VERSION' is not a valid SemVer version such as 2.0.0-Alpha4"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/v${VERSION}" >/dev/null; then
+            echo "::error::Tag v${VERSION} already exists"
+            exit 1
+          fi
+
+  ci:
+    name: Checks
+    needs: prepare
+    uses: ./.github/workflows/authoring-console-ci.yml
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: ci
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: darwin-arm64
+            runner: macos-14
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: authoring-console
+    env:
+      CONSOLE_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: authoring-console/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm run build:sea
+      - name: Check the executable reports the release version
+        run: test "$(./dist-sea/authoring-console-${{ matrix.target }} --version)" = "$VERSION"
+      - name: Package
+        run: |
+          mkdir stage
+          cp "dist-sea/authoring-console-${{ matrix.target }}" stage/authoring-console
+          tar -C stage -czf "authoring-console-${VERSION}-${{ matrix.target }}.tar.gz" authoring-console
+      - uses: actions/upload-artifact@v4
+        with:
+          name: authoring-console-${{ matrix.target }}
+          path: authoring-console/authoring-console-*.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: Tag and publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: authoring-console-*
+          path: assets
+          merge-multiple: true
+      - name: Write checksums
+        working-directory: assets
+        run: sha256sum authoring-console-*.tar.gz > SHA256SUMS && cat SHA256SUMS
+      - name: Create tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          # Any prerelease identifier (2.0.0-Alpha4) marks the release as a prerelease.
+          if [[ "$VERSION" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "v${VERSION}" assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Authoring Console ${VERSION}" \
+            --generate-notes \
+            "${flags[@]}"

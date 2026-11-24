@@ -32,6 +32,10 @@ function interactiveWorkflowPreview(): Plugin {
 // or static host) without a CDN.
 export default defineConfig({
   plugins: [interactiveWorkflowPreview(), react()],
+  // The release workflow supplies CONSOLE_VERSION; local builds report a dev version.
+  define: {
+    __CONSOLE_VERSION__: JSON.stringify(process.env.CONSOLE_VERSION || "0.0.0-dev"),
+  },
   optimizeDeps: {
     exclude: ["@openworkflowspec/diagram-editor"],
     // The unbundled editor still imports this CommonJS shim in development.
