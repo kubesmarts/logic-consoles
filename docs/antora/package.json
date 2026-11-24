@@ -1,0 +1,12 @@
+{
+  "name": "logic-consoles-docs",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "antora --log-failure-level=warn antora-playbook.yaml"
+  },
+  "dependencies": {
+    "@antora/cli": "^3.1.9",
+    "@antora/site-generator": "^3.1.9"
+  }
+}

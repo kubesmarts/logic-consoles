@@ -4,6 +4,8 @@
 **Date:** 2026-10-29
 **Audience:** Product, platform, and frontend engineering
 
+> **Delivery and cluster connection superseded.** ADR 0001 defines the local launcher and hosted modes of the same React application. The implementation plan and roadmap define first-release scope. [ADR 0001](../authoring-console/adr/0001-authoring-console.md#connection-and-identity) · [Implementation plan](../authoring-console/PLAN.md) · [Roadmap](../authoring-console/ROADMAP.md)
+
 ## Intent
 
 Build the public web front end for the Logic Operator ecosystem at [start.kubsmarts.org](https://start.kubsmarts.org). It should take a user from an installed operator to a published workflow, then provide the shared operational views needed to inspect that cluster. The console does not install or upgrade Logic Operator.

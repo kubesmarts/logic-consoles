@@ -1,0 +1,26 @@
+= Author and publish a workflow
+
+. Open *Workflows* and select *Create workflow*. Start in the YAML editor or use *Start from example* to make your own copy of a catalog entry.
+. Set the workflow document name, namespace, and version. Edit the portable Open Workflow Specification 1.1.0 document. Use the diagram to inspect the tasks while editing.
+. Add an inline input schema when you want the run panel to generate fields. For example, add this top-level section to a workflow that accepts a name:
+
+[source,yaml]
+----
+input:
+  schema:
+    document:
+      type: object
+      properties:
+        name:
+          type: string
+      required:
+        - name
+----
+
+Select *Save draft* to keep the document in this browser profile. Drafts belong to the console's browser origin. Reopen the same launcher address and port to return to your drafts.
+
+== Publish a version
+
+Select *Publish workflow*, confirm the target namespace and version, and select one LogicFlowRuntime. All versions with the same workflow name in the same namespace must use the same runtime. Review the generated LogicFlowDefinition YAML, dry-run it, and submit it to Kubernetes.
+
+To revise a deployment, open the version under *Workflows* and use *Actions*. *Publish new version* creates a distinct definition. *Update this version* explicitly updates the selected resource in place. Review the version and changes before submitting. Once the gateway lists the version, continue to xref:run-history.adoc[].

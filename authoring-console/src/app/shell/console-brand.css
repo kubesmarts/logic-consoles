@@ -1,0 +1,37 @@
+.pf-v6-c-masthead.console-masthead {
+  --pf-v6-c-masthead--BackgroundColor: var(--pf-t--color--black);
+  --pf-t--global--text--color--brand--default: var(--pf-t--color--white);
+  --pf-t--global--text--color--brand--hover: var(--pf-t--color--white);
+  --pf-t--global--border--color--brand--default: var(--pf-t--color--gray--50);
+  --pf-t--global--border--color--brand--hover: var(--pf-t--color--white);
+  --pf-t--global--icon--color--regular: var(--pf-t--color--white);
+  --pf-t--global--text--color--regular: var(--pf-t--color--white);
+  --pf-t--global--background--color--action--plain--hover: var(--pf-t--color--gray--90);
+  --pf-t--global--background--color--action--plain--clicked: var(--pf-t--color--gray--90);
+  border-block-end: 2px solid var(--pf-t--color--red--50);
+}
+
+.console-masthead .console-product-name {
+  color: var(--pf-t--color--white);
+  font-size: var(--pf-t--global--font--size--heading--h3);
+  font-weight: var(--pf-t--global--font--weight--heading--bold);
+  text-decoration: none;
+  width: auto;
+}
+
+.console-navigation.pf-v6-c-nav {
+  --pf-v6-c-nav__item--accent--color: var(--pf-t--color--red--50);
+}
+
+.console-resource-tabs.pf-v6-c-tabs {
+  --pf-v6-c-tabs__item--m-current__link--after--BorderColor: var(--pf-t--color--red--50);
+}
+
+.console-primary-action.pf-m-primary {
+  --pf-v6-c-button--m-primary--BackgroundColor: var(--pf-t--color--red--50);
+  --pf-v6-c-button--m-primary--hover--BackgroundColor: var(--pf-t--color--red--60);
+  --pf-v6-c-button--m-primary--m-clicked--BackgroundColor: var(--pf-t--color--red--70);
+  --pf-v6-c-button--m-primary--Color: var(--pf-t--color--white);
+  --pf-v6-c-button--m-primary--hover--Color: var(--pf-t--color--white);
+  --pf-v6-c-button--m-primary--m-clicked--Color: var(--pf-t--color--white);
+}

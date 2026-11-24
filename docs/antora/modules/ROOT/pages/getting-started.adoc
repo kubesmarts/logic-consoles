@@ -1,0 +1,29 @@
+= Connect and run your first workflow
+
+Use the local launcher for a KIND cluster or an existing remote kubeconfig context. The launcher serves the UI on loopback and makes Kubernetes requests with the selected context's credentials.
+
+== Prepare the cluster
+
+For a first run, follow the {operator-docs}/logic-operator/2.0.0-Alpha4/deployment/kind-local.html[operator's KIND guide] and deploy its hello-world sample. For an existing cluster, you need an installed operator, a deployed workflow version, and a gateway reachable from your workstation. If you are setting up an empty platform, continue with xref:platform-runtime.adoc[] after connecting.
+
+== Start the launcher
+
+Install Node.js 24 and clone the https://github.com/kubesmarts/logic-consoles[logic-consoles repository]. From the checkout run:
+
+[source,shell]
+----
+cd authoring-console
+npm ci
+npm run build
+npm start
+----
+
+Keep the terminal open. The launcher prints its local URL and opens the console. On subsequent launches of the same build, run `npm start`. For UI development, use `npm run dev` to start the launcher with hot reload.
+
+. On *Start*, select the kubeconfig context and workflow namespace. The KIND demo uses `kind-logic-operator-dev` and `default`.
+. Select *Connect*. Review the Kubernetes and gateway results, then select *Open console*.
+. Open *Workflows*, expand *hello-world*, and select version *1.0.0*.
+. Select *Run this version*, choose synchronous execution, and enter `World` for the name. When using the JSON input, enter `{"name":"World"}`.
+. Select *Run and wait* and inspect the response. You can see the synchronous output on a platform without Data Index.
+
+See xref:connections.adoc[] if the context is missing or the gateway connection fails.

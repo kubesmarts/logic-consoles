@@ -1,0 +1,22 @@
+= Connection modes and troubleshooting
+
+[cols="1,2,2",options="header"]
+|===
+|Mode |What to supply |Connectivity
+|Local launcher |A kubeconfig context on the workstation. For OpenShift, you can use a context established by `oc login`. |The launcher must reach Kubernetes and the gateway from the user's network.
+|Direct browser |The Kubernetes API URL, bearer token, workflow namespace, and reachable gateway URL. |The browser must trust both endpoints and their CORS policies must allow the console's origin. An HTTPS-hosted UI needs HTTPS endpoints.
+|===
+
+For direct-mode development, run `npm run dev:hosted` from `authoring-console`. For Docker-backed KIND, the https://github.com/kubesmarts/logic-consoles/blob/main/authoring-console/docs/direct-browser-kind.md[direct-browser KIND setup] includes certificate, CORS, and ingress examples. For the standard local setup, see xref:getting-started.adoc[].
+
+Kubernetes access and gateway access are independent. Kubernetes uses the user's credentials to authorize resource operations. In this iteration the gateway uses its service account. The namespace filter scopes a query and does not establish per-user authorization at the gateway.
+
+[cols="1,2",options="header"]
+|===
+|Symptom |What to check
+|Context missing |Run `kubectl config get-contexts` on the machine running the launcher. Confirm the expected kubeconfig is loaded.
+|Kubernetes connects, gateway unavailable |Check the discovered gateway address and its Ingress or Route. The KIND demo commonly uses `http://gateway.lvh.me` with the launcher. Correct the gateway URL on Start and reconnect.
+|Setup or publish reports forbidden |Check permission for the reported verb, resource, and namespace. A cluster platform update and a namespaced workflow publish require different permissions.
+|Run succeeds, history unavailable |Check that the platform enables Data Index and that the gateway can query it. Use the synchronous response to inspect immediate output.
+|Saved draft missing |Open the original browser profile and console origin, including the launcher port.
+|===
