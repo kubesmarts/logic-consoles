@@ -2,8 +2,12 @@ name: Authoring Console CI
 
 on:
   pull_request:
+    paths: &console_paths
+      - 'authoring-console/**'
+      - '.github/workflows/authoring-console-ci.yml'
   push:
     branches: [main]
+    paths: *console_paths
   workflow_call:
 
 # Pull requests supersede their own earlier runs. Every other trigger, including
