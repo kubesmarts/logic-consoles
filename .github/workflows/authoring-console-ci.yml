@@ -15,14 +15,13 @@ concurrency:
 permissions:
   contents: read
 
-defaults:
-  run:
-    working-directory: authoring-console
-
 jobs:
   verify:
     name: Lint, typecheck, unit tests and build
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: authoring-console
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,6 +38,9 @@ jobs:
   e2e:
     name: Browser end-to-end tests
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: authoring-console
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
