@@ -1,0 +1,83 @@
+name: Authoring Console CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+# Pull requests supersede their own earlier runs. Every other trigger, including
+# the release workflow calling this one, gets a unique group so it never queues.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('console-ci-pr-{0}', github.event.pull_request.number) || format('console-ci-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: authoring-console
+
+jobs:
+  verify:
+    name: Lint, typecheck, unit tests and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: authoring-console/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  e2e:
+    name: Browser end-to-end tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: authoring-console/package-lock.json
+      - run: npm ci
+      - id: playwright
+        run: echo "version=$(npx playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: browsers
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
+        if: steps.browsers.outputs.cache-hit != 'true'
+      - name: Install system dependencies only
+        run: npx playwright install-deps chromium
+        if: steps.browsers.outputs.cache-hit == 'true'
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-test-results
+          path: authoring-console/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Single stable name for branch protection: require "ci-ok" instead of each job.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [verify, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every job to succeed
+        run: |
+          echo "verify: ${{ needs.verify.result }}"
+          echo "e2e: ${{ needs.e2e.result }}"
+          [ "${{ needs.verify.result }}" = "success" ] && [ "${{ needs.e2e.result }}" = "success" ]

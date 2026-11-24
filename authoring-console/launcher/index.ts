@@ -13,6 +13,7 @@ import { rememberPort, selectedPort } from "./port.js";
 import { createServer, type ServerConfig } from "./server.js";
 import { createK8sClient, getCurrentContextName, getClusterDisplay } from "./kubernetes-client.js";
 import type { LauncherState } from "./types.js";
+import { consoleVersion } from "./version.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,7 +43,12 @@ const openBrowser = (url: string): void => {
 
 /** Main launcher function. */
 const main = async (): Promise<void> => {
-  console.log("Authoring Console Launcher");
+  if (process.argv.slice(2).some((arg) => arg === "--version" || arg === "-v")) {
+    console.log(consoleVersion);
+    return;
+  }
+
+  console.log(`Authoring Console Launcher ${consoleVersion}`);
   console.log("==========================\n");
 
   // Get current context

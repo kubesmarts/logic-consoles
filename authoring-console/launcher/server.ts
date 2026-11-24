@@ -11,6 +11,7 @@ import { createK8sClient, getClusterDisplay, listContexts } from "./kubernetes-c
 import * as http from "node:http";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { getRawAsset, isSea } from "node:sea";
 import type { LauncherState } from "./types.js";
 import {
   validateLoopbackRequest,
@@ -385,6 +386,20 @@ const handleApiRequest = async (
   sendError(res, 404, "Not found");
 };
 
+/** Read a bundle file from disk, or from the assets embedded in a single executable. */
+const readBundleFile = async (pathname: string, distPath: string): Promise<{ filePath: string; content: Buffer }> => {
+  if (isSea()) {
+    // Embedded asset keys are paths relative to dist/, such as "index.html" or "assets/app.js".
+    const key = path.posix.normalize(pathname).replace(/^\/+/, "");
+    const filePath = key === "" || key.endsWith("/") ? `${key}index.html` : key;
+    return { filePath, content: Buffer.from(getRawAsset(filePath)) };
+  }
+  let filePath = path.join(distPath, pathname === "/" ? "index.html" : pathname);
+  const stats = await fs.promises.stat(filePath);
+  if (stats.isDirectory()) filePath = path.join(filePath, "index.html");
+  return { filePath, content: await fs.promises.readFile(filePath) };
+};
+
 /** Serve static files from dist. */
 const serveStatic = async (
   _req: http.IncomingMessage,
@@ -392,16 +407,8 @@ const serveStatic = async (
   pathname: string,
   distPath: string
 ): Promise<void> => {
-  // Map URL path to file path
-  let filePath = path.join(distPath, pathname === "/" ? "index.html" : pathname);
-
-  // Check if file exists
   try {
-    const stats = await fs.promises.stat(filePath);
-
-    if (stats.isDirectory()) {
-      filePath = path.join(filePath, "index.html");
-    }
+    const { filePath, content } = await readBundleFile(pathname, distPath);
 
     // Determine content type
     const ext = path.extname(filePath);
@@ -421,7 +428,6 @@ const serveStatic = async (
     };
     const contentType = contentTypeMap[ext] || "application/octet-stream";
 
-    const content = await fs.promises.readFile(filePath);
     res.writeHead(200, { "Content-Type": contentType });
     res.end(content);
   } catch {
