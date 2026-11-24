@@ -8,16 +8,15 @@ The Authoring Console is the web interface for managing Logic Operator resources
 
 ## Build and preview the documentation
 
-From the repository root, use Node.js 24 to build the Antora site:
+From the repository root, run `make docs` to build the Antora site with Node.js 24. To build and preview it with Python 3, run:
 
 ```sh
-cd docs/antora
-npm ci
-npm run build
-python3 -m http.server 8000 --bind 127.0.0.1 --directory target/generated-docs
+make docs-serve
 ```
 
-Open [the local documentation](http://127.0.0.1:8000/). Edit AsciiDoc pages in `modules/ROOT/pages`, register new pages in `modules/ROOT/nav.adoc`, and rebuild to preview changes. The first build downloads the shared Antora UI bundle.
+Open [the local documentation](http://127.0.0.1:8000/). To choose a different port, use `make docs-serve DOCS_PORT=8001`. Stop the server with Ctrl+C.
+
+Edit pages in `docs/antora/modules/ROOT/pages` and register new pages in `docs/antora/modules/ROOT/nav.adoc`. While the server is running, run `make docs` in another terminal and refresh the browser. The first build installs dependencies and downloads the shared Antora UI bundle.
 
 ## Publish the documentation
 
